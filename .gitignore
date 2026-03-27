@@ -1,0 +1,9 @@
+# API Keys — never commit
+config.js
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node (if added later)
+node_modules/

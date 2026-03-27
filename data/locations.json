@@ -1,0 +1,57 @@
+[
+  {
+    "id": "lake-allatoona-001",
+    "name": "Lake Allatoona — McKaskey Creek",
+    "coordinates": { "lat": 34.1473, "lng": -84.7229 },
+    "accessibility": "Dock",
+    "amenities": { "restrooms": true, "playground": true, "picnicTables": true, "shadedArea": true },
+    "targetSpecies": ["Largemouth Bass", "Crappie", "Bluegill"],
+    "fees": { "parking": "$5/day", "fishing": "GA License Required" },
+    "region": "Atlanta, GA",
+    "driveTimeFromAtlanta": 45
+  },
+  {
+    "id": "stone-mountain-lake-001",
+    "name": "Stone Mountain Park — Fishing Area",
+    "coordinates": { "lat": 33.8081, "lng": -84.1452 },
+    "accessibility": "Clear Bank",
+    "amenities": { "restrooms": true, "playground": true, "picnicTables": true, "shadedArea": true },
+    "targetSpecies": ["Bass", "Bluegill", "Catfish"],
+    "fees": { "parking": "$20/vehicle (park admission)", "fishing": "Free with park entry" },
+    "region": "Atlanta, GA",
+    "driveTimeFromAtlanta": 30
+  },
+  {
+    "id": "sweetwater-creek-001",
+    "name": "Sweetwater Creek State Park",
+    "coordinates": { "lat": 33.7490, "lng": -84.6271 },
+    "accessibility": "Clear Bank",
+    "amenities": { "restrooms": true, "playground": false, "picnicTables": true, "shadedArea": true },
+    "targetSpecies": ["Bass", "Bream", "Catfish"],
+    "fees": { "parking": "$5/day", "fishing": "GA License Required" },
+    "region": "Atlanta, GA",
+    "driveTimeFromAtlanta": 25
+  },
+  {
+    "id": "lake-lanier-001",
+    "name": "Lake Lanier — Sawnee Campground Dock",
+    "coordinates": { "lat": 34.1732, "lng": -84.0168 },
+    "accessibility": "Dock",
+    "amenities": { "restrooms": true, "playground": false, "picnicTables": true, "shadedArea": true },
+    "targetSpecies": ["Striped Bass", "Largemouth Bass", "Crappie"],
+    "fees": { "parking": "$5/day", "fishing": "GA License Required" },
+    "region": "Atlanta, GA",
+    "driveTimeFromAtlanta": 60
+  },
+  {
+    "id": "kennesaw-mountain-pond-001",
+    "name": "Kennesaw Mountain — Visitors Pond",
+    "coordinates": { "lat": 33.9748, "lng": -84.5766 },
+    "accessibility": "Clear Bank",
+    "amenities": { "restrooms": true, "playground": true, "picnicTables": true, "shadedArea": true },
+    "targetSpecies": ["Bluegill", "Bass", "Catfish"],
+    "fees": { "parking": "Free", "fishing": "GA License Required" },
+    "region": "Atlanta, GA",
+    "driveTimeFromAtlanta": 35
+  }
+]

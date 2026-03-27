@@ -11,6 +11,8 @@
       --blue: #48CAE4;
       --sand: #F4E285;
     }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 1s linear infinite; }
   </style>
 </head>
 <body class="bg-gray-50 font-sans text-gray-800">
@@ -44,16 +46,33 @@
     </div>
   </header>
 
+  <!-- GPS Denied Banner -->
+  <div id="gpsBanner" style="display:none;"
+    class="bg-yellow-50 border-l-4 border-yellow-400 px-4 py-2 text-sm text-yellow-800 flex items-center gap-2">
+    📍 <strong>Location unavailable</strong> — showing spots near Atlanta, GA. Enable location for personalized results.
+  </div>
+
+  <!-- Weather Fallback Banner -->
+  <div id="weatherBanner" style="display:none;"
+    class="bg-blue-50 border-l-4 border-blue-400 px-4 py-2 text-sm text-blue-800 flex items-center gap-2">
+    🌤️ <strong>Using estimated weather</strong> — Add an OpenWeatherMap API key in config.js for live conditions.
+  </div>
+
   <!-- Location Cards -->
   <main class="px-4 py-4 max-w-2xl mx-auto">
+    <!-- Loading State -->
+    <div id="loadingState" style="display:none;" class="text-center py-12">
+      <div class="spinner inline-block w-10 h-10 border-4 border-green-700 border-t-transparent rounded-full mb-3"></div>
+      <p class="text-gray-500 text-sm">Finding fishing spots near you...</p>
+    </div>
     <div id="cardContainer" class="space-y-4"></div>
   </main>
 
   <!-- Bottom Nav -->
   <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around py-2 z-10">
     <button class="flex flex-col items-center text-xs text-green-700 min-h-[44px] min-w-[44px]">🏠<span>Home</span></button>
-    <button class="flex flex-col items-center text-xs text-gray-500 min-h-[44px] min-w-[44px]">🗺️<span>Map</span></button>
-    <button class="flex flex-col items-center text-xs text-gray-500 min-h-[44px] min-w-[44px]">⭐<span>Saved</span></button>
+    <button onclick="alert('Map view coming soon!')" class="flex flex-col items-center text-xs text-gray-400 min-h-[44px] min-w-[44px]">🗺️<span>Map</span></button>
+    <button onclick="alert('Saved spots coming soon!')" class="flex flex-col items-center text-xs text-gray-400 min-h-[44px] min-w-[44px]">⭐<span>Saved</span></button>
   </nav>
 
   <div class="h-20"></div><!-- bottom nav spacer -->
@@ -75,7 +94,7 @@
     function renderCards(locations) {
       const container = document.getElementById("cardContainer");
       if (!locations.length) {
-        container.innerHTML = `<p class="text-center text-gray-500 mt-8">No spots found. Try increasing your drive time.</p>`;
+        container.innerHTML = `<p class="text-center text-gray-500 mt-8">No spots found within your drive time. Try increasing the range.</p>`;
         return;
       }
       container.innerHTML = locations.map(loc => {
@@ -94,6 +113,7 @@
             </div>
             <p class="text-sm text-gray-500 mt-1">📍 ${loc.distMiles} miles · ~${Math.round(loc.estDriveHours * 60)} min drive</p>
             <p class="text-sm text-gray-500">🎣 ${loc.targetSpecies.join(", ")}</p>
+            <p class="text-sm text-gray-500">🚫 ${loc.fees.parking} · ${loc.fees.fishing}</p>
             <div class="flex flex-wrap gap-1 mt-2">${tags}</div>
           </div>`;
       }).join("");

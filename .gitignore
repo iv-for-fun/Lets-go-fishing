@@ -1,6 +1,3 @@
-# API Keys — never commit
-config.js
-
 # OS files
 .DS_Store
 Thumbs.db

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Let's Go Fishing 🎣</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --green: #2D6A4F;
+      --blue: #48CAE4;
+      --sand: #F4E285;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans text-gray-800">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-10 bg-white shadow-md px-4 py-3">
+    <h1 class="text-xl font-bold text-green-800">🎣 Let's Go Fishing</h1>
+    <div class="flex flex-wrap gap-3 mt-2">
+      <div>
+        <label class="text-sm font-medium" for="driveTime">Max Drive Time</label>
+        <select id="driveTime" class="ml-2 border rounded px-2 py-1 text-sm min-h-[44px]">
+          <option value="0.5">30 min</option>
+          <option value="1.0">1 hr</option>
+          <option value="1.5" selected>1.5 hrs</option>
+          <option value="2.0">2 hrs</option>
+          <option value="2.5">2.5 hrs</option>
+          <option value="3.0">3 hrs</option>
+          <option value="3.5">3.5 hrs</option>
+          <option value="4.0">4 hrs</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-sm font-medium" for="childAge">Child Age</label>
+        <input id="childAge" type="number" min="1" max="12" value="8"
+          class="ml-2 border rounded px-2 py-1 text-sm w-16 min-h-[44px]" />
+      </div>
+      <button id="searchBtn"
+        class="bg-green-700 text-white px-4 py-2 rounded text-sm font-semibold min-h-[44px] min-w-[44px]">
+        Find Spots
+      </button>
+    </div>
+  </header>
+
+  <!-- Location Cards -->
+  <main class="px-4 py-4 max-w-2xl mx-auto">
+    <div id="cardContainer" class="space-y-4"></div>
+  </main>
+
+  <!-- Bottom Nav -->
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around py-2 z-10">
+    <button class="flex flex-col items-center text-xs text-green-700 min-h-[44px] min-w-[44px]">🏠<span>Home</span></button>
+    <button class="flex flex-col items-center text-xs text-gray-500 min-h-[44px] min-w-[44px]">🗺️<span>Map</span></button>
+    <button class="flex flex-col items-center text-xs text-gray-500 min-h-[44px] min-w-[44px]">⭐<span>Saved</span></button>
+  </nav>
+
+  <div class="h-20"></div><!-- bottom nav spacer -->
+
+  <script src="config.js"></script>
+  <script src="scorer.js"></script>
+  <script src="app.js"></script>
+  <script>
+    function scoreBadge(score) {
+      if (score >= 70) return `<span class="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">🟢 ${score}</span>`;
+      if (score >= 40) return `<span class="bg-yellow-400 text-gray-800 text-xs font-bold px-2 py-1 rounded-full">🟡 ${score}</span>`;
+      return `<span class="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">🔴 ${score}</span>`;
+    }
+
+    function tagPill(label, color = "bg-blue-100 text-blue-800") {
+      return `<span class="text-xs px-2 py-1 rounded-full font-medium ${color}">${label}</span>`;
+    }
+
+    function renderCards(locations) {
+      const container = document.getElementById("cardContainer");
+      if (!locations.length) {
+        container.innerHTML = `<p class="text-center text-gray-500 mt-8">No spots found. Try increasing your drive time.</p>`;
+        return;
+      }
+      container.innerHTML = locations.map(loc => {
+        const tags = [
+          loc.amenities.restrooms   ? tagPill("🚻 Restrooms") : "",
+          loc.amenities.playground  ? tagPill("🛙 Playground", "bg-yellow-100 text-yellow-800") : "",
+          loc.accessibility === "Dock" ? tagPill("🚤 Dock Access", "bg-green-100 text-green-800") : "",
+          loc.score >= 70 ? tagPill("🐟 High Activity", "bg-green-100 text-green-800") : ""
+        ].filter(Boolean).join(" ");
+
+        return `
+          <div class="bg-white rounded-xl shadow-md p-4 border border-gray-100">
+            <div class="flex justify-between items-start">
+              <h2 class="font-bold text-base text-green-900 leading-snug">${loc.name}</h2>
+              ${scoreBadge(loc.score)}
+            </div>
+            <p class="text-sm text-gray-500 mt-1">📍 ${loc.distMiles} miles · ~${Math.round(loc.estDriveHours * 60)} min drive</p>
+            <p class="text-sm text-gray-500">🎣 ${loc.targetSpecies.join(", ")}</p>
+            <div class="flex flex-wrap gap-1 mt-2">${tags}</div>
+          </div>`;
+      }).join("");
+    }
+  </script>
+</body>
+</html>

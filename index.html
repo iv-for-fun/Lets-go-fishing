@@ -50,6 +50,9 @@
         class="bg-green-700 hover:bg-green-800 text-white px-5 py-2 rounded-lg text-sm font-bold min-h-[44px] self-end shadow-sm transition-all active:scale-95">
         Find Spots
       </button>
+    </div>
+  </header>
+
   <!-- Banners -->
   <div id="gpsBanner" style="display:none;" class="bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-[11px] text-yellow-800 font-medium">
     📍 Using manual location — Geolocation access was denied or unavailable.
@@ -128,7 +131,6 @@
       }
     }
 
-
     function getMoonPhase(date) {
       const refNew = new Date('2000-01-06T18:14:00Z');
       const diffMs = date - refNew;
@@ -136,5 +138,39 @@
       return (diffDays % 29.53) / 29.53;
     }
 
-    </div>
-  </header>
+    function getMoonIcon(phase) {
+      if (phase < 0.0625 || phase >= 0.9375) return '🌑';
+      if (phase < 0.1875) return '🌒';
+      if (phase < 0.3125) return '🌓';
+      if (phase < 0.4375) return '🌔';
+      if (phase < 0.5625) return '🌕';
+      if (phase < 0.6875) return '🌖';
+      if (phase < 0.8125) return '🌗';Fix truncated index.html and add missing renderForecast and getMoonIcon helpers
+      return '🌘';
+    }
+
+    function renderForecast(loc) {
+      const grid = document.getElementById("forecastGrid");
+      if (!grid) return;
+      grid.innerHTML = "";
+      
+      const today = new Date();
+      for (let i = 0; i < 30; i++) {
+        const date = new Date(today);
+        date.setDate(today.getDate() + i);
+        const phase = getMoonPhase(date);
+        
+        // Simple fishability score based on moon phase
+        const moonScore = 100 - (Math.abs((phase % 0.5) - 0.25) / 0.25 * 50);
+        const color = moonScore > 80 ? 'bg-green-400' : moonScore > 60 ? 'bg-yellow-300' : 'bg-red-400';
+        
+        const dayEl = document.createElement("div");
+        dayEl.className = `h-8 flex flex-col items-center justify-center rounded-md text-[10px] font-bold ${color} border border-white/20`;
+        dayEl.innerHTML = `<span>${date.getDate()}</span>`;
+        dayEl.title = `Date: ${date.toLocaleDateString()}\nMoon Phase: ${Math.round(phase * 100)}%\nScore: ${Math.round(moonScore)}`;
+        grid.appendChild(dayEl);
+      }
+    }
+  </script>
+</body>
+</html>

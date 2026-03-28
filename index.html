@@ -13,103 +13,99 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner { animation: spin 1s linear infinite; }
-    .tab-btn { @apply px-4 py-2 text-sm font-medium rounded-t-lg; }
-    .tab-active { @apply bg-white text-green-700 border-t-2 border-x border-green-700; }
-    .tab-inactive { @apply bg-gray-100 text-gray-600 hover:bg-gray-200; }
+    .tab-btn { @apply px-5 py-3 text-xs font-bold uppercase tracking-wider transition-all duration-200 border-b-2 border-transparent; }
+    .tab-active { @apply border-green-700 text-green-700 bg-white; }
+    .tab-inactive { @apply text-gray-400 bg-gray-50 hover:bg-gray-100 hover:text-gray-600; }
   </style>
 </head>
 <body class="bg-gray-50 font-sans text-gray-800">
-
-  <!-- Header -->
   <header class="sticky top-0 z-10 bg-white shadow-md px-4 py-3">
-    <h1 class="text-xl font-bold text-green-800">🎣 Let's Go Fishing</h1>
-    <div class="flex flex-wrap gap-2 mt-2">
+    <div class="flex items-center justify-between">
+      <h1 class="text-xl font-bold text-green-800 flex items-center gap-2">
+        <span>🎣</span> Let's Go Fishing
+      </h1>
+    </div>
+    <div class="flex flex-wrap gap-2 mt-3">
       <div class="flex-1 min-w-[200px]">
-        <label class="text-sm font-medium" for="locationInput">Location</label>
-        <input id="locationInput" type="text" placeholder="Current Location"
-          class="w-full border rounded px-2 py-1 text-sm min-h-[44px]" />
+        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1" for="locationInput">Your Location</label>
+        <input id="locationInput" type="text" placeholder="City, State or 'Current'"
+          class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none min-h-[44px]" />
       </div>
-      <div>
-        <label class="text-sm font-medium" for="driveTime">Max Drive</label>
-        <select id="driveTime" class="ml-1 border rounded px-2 py-1 text-sm min-h-[44px]">
+      <div class="w-24">
+        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1" for="driveTime">Max Drive</label>
+        <select id="driveTime" class="w-full border rounded-lg px-2 py-2 text-sm min-h-[44px]">
           <option value="0.5">30 min</option>
           <option value="1.0">1 hr</option>
-          <option value="1.5" selected>1.5 hrs</option>
-          <option value="2.0">2 hrs</option>
-          <option value="2.5">2.5 hrs</option>
-          <option value="3.0">3 hrs</option>
-          <option value="3.5">3.5 hrs</option>
-          <option value="4.0">4 hrs</option>
+          <option value="1.5" selected>1.5 hr</option>
+          <option value="2.5">2.5 hr</option>
+          <option value="4.0">4 hr</option>
         </select>
       </div>
-      <div>
-        <label class="text-sm font-medium" for="childAge">Child Age</label>
-        <input id="childAge" type="number" min="1" max="12" value="8"
-          class="ml-1 border rounded px-2 py-1 text-sm w-16 min-h-[44px]" />
+      <div class="w-20">
+        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1" for="childAge">Kid Age</label>
+        <input id="childAge" type="number" min="1" max="15" value="6"
+          class="w-full border rounded-lg px-2 py-2 text-sm min-h-[44px]" />
       </div>
       <button id="searchBtn"
-        class="bg-green-700 text-white px-4 py-2 rounded text-sm font-semibold min-h-[44px] self-end">
+        class="bg-green-700 hover:bg-green-800 text-white px-5 py-2 rounded-lg text-sm font-bold min-h-[44px] self-end shadow-sm transition-all active:scale-95">
         Find Spots
       </button>
-    </div>
-  </header>
-
-  <!-- GPS Denied Banner -->
-  <div id="gpsBanner" style="display:none;"
-    class="bg-yellow-50 border-l-4 border-yellow-400 px-4 py-2 text-sm text-yellow-800 flex items-center gap-2">
-    📍 <strong>Location unavailable</strong> — showing spots near specified location.
+  <!-- Banners -->
+  <div id="gpsBanner" style="display:none;" class="bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-[11px] text-yellow-800 font-medium">
+    📍 Using manual location — Geolocation access was denied or unavailable.
   </div>
-
-  <!-- Weather Fallback Banner -->
-  <div id="weatherBanner" style="display:none;"
-    class="bg-blue-50 border-l-4 border-blue-400 px-4 py-2 text-sm text-blue-800 flex items-center gap-2">
-    🌤️ <strong>Using estimated weather</strong> — Add an OpenWeatherMap API key in config.js for live conditions.
+  <div id="weatherBanner" style="display:none;" class="bg-blue-50 border-b border-blue-200 px-4 py-2 text-[11px] text-blue-800 font-medium">
+    🌤️ Using estimated weather — Live data requires an API key in config.js.
   </div>
 
   <!-- List View -->
-  <main id="listView" class="px-4 py-4 max-w-2xl mx-auto">
-    <!-- Loading State -->
-    <div id="loadingState" style="display:none;" class="text-center py-12">
-      <div class="spinner inline-block w-10 h-10 border-4 border-green-700 border-t-transparent rounded-full mb-3"></div>
-      <p class="text-gray-500 text-sm">Finding fishing spots near you...</p>
+  <main id="listView" class="px-4 py-5 max-w-2xl mx-auto">
+    <div id="loadingState" style="display:none;" class="text-center py-20">
+      <div class="spinner inline-block w-8 h-8 border-4 border-green-700 border-t-transparent rounded-full mb-3"></div>
+      <p class="text-gray-400 text-xs font-bold uppercase tracking-widest">Searching Waters...</p>
     </div>
     <div id="cardContainer" class="space-y-4"></div>
   </main>
 
   <!-- Detail View -->
-  <div id="detailView" style="display:none;" class="max-w-2xl mx-auto px-4 py-4 pb-24">
-    <!-- Back Button -->
-    <button onclick="showListView()" class="flex items-center gap-2 text-green-700 font-semibold mb-4 min-h-[44px]">
-      ← Back to results
+  <div id="detailView" style="display:none;" class="max-w-2xl mx-auto px-4 py-5 pb-24">
+    <button onclick="showListView()" class="flex items-center gap-2 text-green-700 font-bold text-sm mb-5 hover:translate-x-[-4px] transition-transform">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>
+      Back to results
     </button>
-    <!-- Detail Content -->
     <div id="detailContent"></div>
   </div>
 
   <!-- Bottom Nav -->
-  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around py-2 z-10">
-    <button onclick="showListView()" class="flex flex-col items-center text-xs text-green-700 min-h-[44px] min-w-[44px]">🏠<span>Home</span></button>
-    <button onclick="alert('Map view coming soon!')" class="flex flex-col items-center text-xs text-gray-400 min-h-[44px] min-w-[44px]">🗺️<span>Map</span></button>
-    <button onclick="alert('Saved spots coming soon!')" class="flex flex-col items-center text-xs text-gray-400 min-h-[44px] min-w-[44px]">⭐<span>Saved</span></button>
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around py-3 z-10 shadow-lg">
+    <button onclick="showListView()" class="flex flex-col items-center text-[10px] font-bold uppercase text-green-700">
+      <svg class="w-6 h-6 mb-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+      Explore
+    </button>
+    <button onclick="alert('Maps view coming soon!')" class="flex flex-col items-center text-[10px] font-bold uppercase text-gray-400">
+      <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7l6-3 5.447 2.724a1 1 0 01.553.894v10.764a1 1 0 01-1.447.894L15 17l-6 3z"></path></svg>
+      Map
+    </button>
+    <button onclick="alert('Saved spots coming soon!')" class="flex flex-col items-center text-[10px] font-bold uppercase text-gray-400">
+      <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
+      Saved
+    </button>
   </nav>
-
-  <div class="h-20"></div><!-- bottom nav spacer -->
 
   <script src="config.js"></script>
   <script src="scorer.js"></script>
   <script src="app.js"></script>
   <script>
-    // Store all results globally so detail view can access them
     let allResults = [];
-
+    
     function scoreBadge(score) {
-      if (score >= 70) return `<span class="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">🟢 ${score}</span>`;
-      if (score >= 40) return `<span class="bg-yellow-400 text-gray-800 text-xs font-bold px-2 py-1 rounded-full">🟡 ${score}</span>`;
-      return `<span class="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">🔴 ${score}</span>`;
+      const color = score >= 70 ? 'bg-green-500' : score >= 40 ? 'bg-yellow-500' : 'bg-red-500';
+      const label = score >= 70 ? 'Excellent' : score >= 40 ? 'Good' : 'Poor';
+      return `<span class="${color} text-white text-[10px] font-black uppercase px-2 py-1 rounded-md shadow-sm">${label} ${score}</span>`;
     }
 
-    function tagPill(label, color = "bg-blue-100 text-blue-800") {
-      return `<span class="text-xs px-2 py-1 rounded-full font-medium ${color}">${label}</span>`;
+    function tagPill(label, color = "bg-gray-100 text-gray-600") {
+      return `<span class="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${color}">${label}</span>`;
     }
 
     function showListView() {
@@ -118,258 +114,27 @@
       window.scrollTo(0, 0);
     }
 
-    function switchTab(tabName, loc) {
+    function switchTab(tabName, locId) {
       const tabs = ['overview', 'fish', 'amenities', 'forecast'];
       tabs.forEach(t => {
-        document.getElementById(`tab-${t}`).style.display = t === tabName ? 'block' : 'none';
+        const el = document.getElementById(`tab-${t}`);
+        if (el) el.style.display = t === tabName ? 'block' : 'none';
         const btn = document.getElementById(`btn-${t}`);
-        if (btn) {
-          btn.className = t === tabName ? 'tab-btn tab-active' : 'tab-btn tab-inactive';
-        }
+        if (btn) btn.className = t === tabName ? 'tab-btn tab-active' : 'tab-btn tab-inactive';
       });
       if (tabName === 'forecast') {
+        const loc = allResults.find(l => l.id === locId);
         renderForecast(loc);
       }
     }
+
 
     function getMoonPhase(date) {
       const refNew = new Date('2000-01-06T18:14:00Z');
       const diffMs = date - refNew;
       const diffDays = diffMs / (1000 * 60 * 60 * 24);
-      const phase = (diffDays % 29.53) / 29.53;
-      return phase;
+      return (diffDays % 29.53) / 29.53;
     }
 
-    function getFishingScore(date, loc) {
-      const phase = getMoonPhase(date);
-      const moonScore = Math.round(100 - Math.abs(phase - 0.5) / 0.25 * 100);
-      const month = date.getMonth();
-      let seasonBonus = 0;
-      if (month >= 3 && month <= 5) seasonBonus = 15;
-      else if (month >= 6 && month <= 8) seasonBonus = 10;
-      else if (month >= 9 && month <= 10) seasonBonus = 12;
-      const dayOfWeek = date.getDay();
-      const weekendBonus = (dayOfWeek === 0 || dayOfWeek === 6) ? 5 : 0;
-      let score = Math.round((moonScore * 0.6) + seasonBonus + weekendBonus);
-      return Math.max(20, Math.min(100, score));
-    }
-
-    function renderForecast(loc) {
-      const container = document.getElementById('forecast-calendar');
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      let html = '<div class="grid grid-cols-7 gap-2">';
-      const days = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-      days.forEach(d => {
-        html += `<div class="text-center text-xs font-semibold text-gray-500">${d}</div>`;
-      });
-      for (let i = 0; i < 30; i++) {
-        const date = new Date(today);
-        date.setDate(date.getDate() + i);
-        const score = getFishingScore(date, loc);
-        const phase = getMoonPhase(date);
-        let moonIcon = '🌑';
-        if (phase < 0.125 || phase >= 0.875) moonIcon = '🌑';
-        else if (phase < 0.25) moonIcon = '🌒';
-        else if (phase < 0.375) moonIcon = '🌓';
-        else if (phase < 0.5) moonIcon = '🌔';
-        else if (phase < 0.625) moonIcon = '🌕';
-        else if (phase < 0.75) moonIcon = '🌖';
-        else if (phase < 0.875) moonIcon = '🌗';
-        else moonIcon = '🌘';
-        let bgColor = 'bg-red-100';
-        if (score >= 70) bgColor = 'bg-green-200';
-        else if (score >= 50) bgColor = 'bg-yellow-100';
-        else if (score >= 35) bgColor = 'bg-orange-100';
-        html += `<div class="${bgColor} rounded-lg p-2 text-center">
-          <div class="text-xs font-bold">${date.getDate()}</div>
-          <div class="text-lg">${moonIcon}</div>
-          <div class="text-xs font-semibold mt-1">${score}</div>
-        </div>`;
-      }
-      html += '</div>';
-      html += '<div class="flex justify-center gap-4 mt-4 text-xs">';
-      html += '<span><span class="inline-block w-3 h-3 bg-green-200 rounded"></span> Excellent (70+)</span>';
-      html += '<span><span class="inline-block w-3 h-3 bg-yellow-100 rounded"></span> Good (50-69)</span>';
-      html += '<span><span class="inline-block w-3 h-3 bg-orange-100 rounded"></span> Fair (35-49)</span>';
-      html += '<span><span class="inline-block w-3 h-3 bg-red-100 rounded"></span> Poor (&lt;35)</span>';
-      html += '</div>';
-      container.innerHTML = html;
-    }
-
-    function showDetailView(locId) {
-      const loc = allResults.find(l => l.id === locId);
-      if (!loc) return;
-
-      const fishSpeciesData = [
-        { name: 'Largemouth Bass', icon: '🐟', bestBait: 'Plastic worms, crankbaits', bestTime: 'Dawn/dusk', gear: '6-7ft medium rod' },
-        { name: 'Bluegill', icon: '🐠', bestBait: 'Worms, crickets', bestTime: 'Mid-morning', gear: 'Light rod, small hooks' },
-        { name: 'Crappie', icon: '🐟', bestBait: 'Minnows, jigs', bestTime: 'Early morning', gear: 'Light spinning rod' },
-        { name: 'Catfish', icon: '🐈', bestBait: 'Cut bait, stink bait', bestTime: 'Night', gear: 'Medium-heavy rod' },
-        { name: 'Striped Bass', icon: '🐟', bestBait: 'Live shad, swimbaits', bestTime: 'Early morning', gear: 'Medium-heavy rod' },
-        { name: 'Bream', icon: '🐠', bestBait: 'Worms, crickets', bestTime: 'Morning', gear: 'Light rod' },
-        { name: 'Bass', icon: '🐟', bestBait: 'Worms, lures', bestTime: 'Dawn/dusk', gear: 'Medium rod' }
-      ];
-
-      const speciesCards = loc.targetSpecies.map(species => {
-        const data = fishSpeciesData.find(f => f.name === species) || 
-          { name: species, icon: '🐟', bestBait: 'Various', bestTime: 'All day', gear: 'Medium rod' };
-        return `
-          <div class="bg-white border rounded-lg p-3">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-2xl">${data.icon}</span>
-              <span class="font-semibold text-sm">${data.name}</span>
-            </div>
-            <div class="text-xs text-gray-600 space-y-1">
-              <p><strong>Best Bait:</strong> ${data.bestBait}</p>
-              <p><strong>Best Time:</strong> ${data.bestTime}</p>
-              <p><strong>Gear:</strong> ${data.gear}</p>
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      const amenityItems = [
-        { key: 'restrooms', label: 'Restrooms', icon: '🚻', desc: loc.amenities.restrooms ? 'Available' : 'Not available' },
-        { key: 'playground', label: 'Playground', icon: '🖐️', desc: loc.amenities.playground ? 'Kid-friendly play area' : 'Not available' },
-        { key: 'picnicTables', label: 'Picnic Areas', icon: '🧺', desc: loc.amenities.picnicTables ? 'Tables and benches available' : 'Not available' },
-        { key: 'parking', label: 'Parking', icon: '🅿️', desc: loc.amenities.parking ? 'Parking available' : 'No parking' },
-      ];
-
-      const amenityGrid = amenityItems.map(item => {
-        const available = loc.amenities[item.key];
-        return `
-          <div class="bg-gray-50 rounded-lg p-3 ${available ? '' : 'opacity-50'}">
-            <div class="text-2xl mb-1">${item.icon}</div>
-            <div class="text-xs font-semibold">${item.label}</div>
-            <div class="text-xs text-gray-600 mt-1">${item.desc}</div>
-          </div>
-        `;
-      }).join('');
-
-      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.name + ' ' + (loc.address || ''))}`;
-
-      document.getElementById("detailContent").innerHTML = `
-        <div class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-          <!-- Hero Header -->
-          <div class="bg-green-700 text-white px-5 py-5">
-            <div class="flex justify-between items-start">
-              <h2 class="font-bold text-xl leading-snug">${loc.name}</h2>
-              ${scoreBadge(loc.score)}
-            </div>
-            <p class="text-green-200 text-sm mt-1">📍 ${loc.distMiles} miles · ~${Math.round(loc.estDriveHours * 60)} min drive</p>
-          </div>
-
-          <!-- Tab Navigation -->
-          <div class="flex border-b bg-gray-50">
-            <button id="btn-overview" onclick="switchTab('overview', allResults.find(l => l.id === '${loc.id}'))" class="tab-btn tab-active">Overview</button>
-            <button id="btn-fish" onclick="switchTab('fish', allResults.find(l => l.id === '${loc.id}'))" class="tab-btn tab-inactive">Fish & Gear</button>
-            <button id="btn-amenities" onclick="switchTab('amenities', allResults.find(l => l.id === '${loc.id}'))" class="tab-btn tab-inactive">Amenities</button>
-            <button id="btn-forecast" onclick="switchTab('forecast', allResults.find(l => l.id === '${loc.id}'))" class="tab-btn tab-inactive">Forecast</button>
-          </div>
-
-          <div class="p-5">
-            <!-- Overview Tab -->
-            <div id="tab-overview">
-              ${loc.description ? `<p class="text-sm text-gray-600 mb-4">${loc.description}</p>` : ''}
-              
-              <div class="bg-green-50 rounded-lg p-4 mb-4">
-                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Current Conditions</p>
-                <div class="flex items-center gap-3">
-                  ${scoreBadge(loc.score)}
-                  <p class="text-xs text-gray-600">Based on weather, lunar phase, kid amenities &amp; accessibility</p>
-                </div>
-              </div>
-
-              <div class="space-y-3">
-                <div>
-                  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">🎣 Target Species</p>
-                  <p class="text-sm text-gray-800">${loc.targetSpecies.join(", ")}</p>
-                </div>
-
-                <div>
-                  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">♿ Accessibility</p>
-                  <p class="text-sm text-gray-800">${loc.accessibility}</p>
-                </div>
-              </div>
-
-              <a href="${mapsUrl}" target="_blank"
-                class="block w-full bg-green-700 text-white text-center py-3 rounded-lg font-semibold text-sm mt-4">
-                🗺️ Get Directions
-              </a>
-            </div>
-
-            <!-- Fish & Gear Tab -->
-            <div id="tab-fish" style="display:none;">
-              <h3 class="font-semibold text-sm mb-3 text-gray-700">Species You Can Catch</h3>
-              <div class="grid grid-cols-1 gap-3">
-                ${speciesCards}
-              </div>
-            </div>
-
-            <!-- Amenities Tab -->
-            <div id="tab-amenities" style="display:none;">
-              <h3 class="font-semibold text-sm mb-3 text-gray-700">Facilities & Features</h3>
-              <div class="grid grid-cols-2 gap-3 mb-4">
-                ${amenityGrid}
-              </div>
-              
-              <div class="bg-gray-50 rounded-lg p-4 space-y-3">
-                <div>
-                  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Parking Fee</p>
-                  <p class="text-sm mt-1">${loc.fees.parking}</p>
-                </div>
-                <div>
-                  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Fishing License</p>
-                  <p class="text-sm mt-1">${loc.fees.fishing}</p>
-                </div>
-              </div>
-            </div>
-
-            <!-- Forecast Tab -->
-            <div id="tab-forecast" style="display:none;">
-              <h3 class="font-semibold text-sm mb-3 text-gray-700">30-Day Fishing Forecast</h3>
-              <p class="text-xs text-gray-600 mb-4">Based on moon phase, season, and day of week</p>
-              <div id="forecast-calendar"></div>
-            </div>
-          </div>
-        </div>
-      `;
-
-      document.getElementById("listView").style.display = "none";
-      document.getElementById("detailView").style.display = "block";
-      window.scrollTo(0, 0);
-    }
-
-    function renderCards(locations) {
-      allResults = locations;
-      const container = document.getElementById("cardContainer");
-      if (!locations.length) {
-        container.innerHTML = `<p class="text-center text-gray-500 mt-8">No spots found within your drive time. Try increasing the range.</p>`;
-        return;
-      }
-      container.innerHTML = locations.map(loc => {
-        const tags = [
-          loc.amenities.restrooms   ? tagPill("🚻 Restrooms") : "",
-          loc.amenities.playground  ? tagPill("🖐️ Playground", "bg-yellow-100 text-yellow-800") : "",
-          loc.accessibility === "Dock" ? tagPill("🚤 Dock Access", "bg-green-100 text-green-800") : "",
-          loc.score >= 70 ? tagPill("🐟 High Activity", "bg-green-100 text-green-800") : ""
-        ].filter(Boolean).join(" ");
-
-        return `
-          <div onclick="showDetailView('${loc.id}')" class="bg-white rounded-xl shadow-md p-4 border border-gray-100 cursor-pointer hover:shadow-lg hover:border-green-200 transition-all active:scale-95">
-            <div class="flex justify-between items-start">
-              <h2 class="font-bold text-base text-green-900 leading-snug">${loc.name}</h2>
-              ${scoreBadge(loc.score)}
-            </div>
-            <p class="text-sm text-gray-500 mt-1">📍 ${loc.distMiles} miles · ~${Math.round(loc.estDriveHours * 60)} min drive</p>
-            <p class="text-sm text-gray-500">🎣 ${loc.targetSpecies.join(", ")}</p>
-            <p class="text-sm text-gray-500">🚫 ${loc.fees.parking} · ${loc.fees.fishing}</p>
-            <div class="flex flex-wrap gap-1 mt-2">${tags}</div>
-            <p class="text-xs text-green-700 font-medium mt-2 text-right">View details →</p>
-          </div>`;
-      }).join("");
-    }
-  </script>
-</body>
-</html>
+    </div>
+  </header>

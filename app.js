@@ -346,4 +346,4 @@ async function init() {
 }
 
 document.getElementById("searchBtn").addEventListener("click", init);
-window.addEventListener("load", init);
+

@@ -15,6 +15,26 @@ async function getLocation() {
   });
 }
 
+// Geocode a location string using OpenStreetMap Nominatim API (free, no key required)
+async function geocodeLocation(locationString) {
+  if (!locationString || locationString.trim() === '' || locationString.toLowerCase().includes('current')) {
+    return null; // Use GPS instead
+  }
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationString)}&format=json&limit=1`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'LetsGoFishingApp/1.0' }
+    });
+    if (!res.ok) throw new Error('Geocoding failed');
+    const data = await res.json();
+    if (data.length === 0) throw new Error('Location not found');
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch (err) {
+    console.warn('Geocoding error:', err);
+    return null;
+  }
+}
+
 function haversineDistance(coord1, coord2) {
   const R = 3958.8;
   const dLat = (coord2.lat - coord1.lat) * Math.PI / 180;
@@ -91,15 +111,25 @@ async function init() {
   showWeatherBanner(false);
   document.getElementById("cardContainer").innerHTML = "";
 
+  const locationInput = document.getElementById("locationInput").value;
   let userCoords;
   let locationDenied = false;
-  try {
-    userCoords = await getLocation();
-  } catch {
-    userCoords = ATLANTA_FALLBACK;
-    locationDenied = true;
+
+  // Try geocoding first if user entered a location
+  const geocoded = await geocodeLocation(locationInput);
+  if (geocoded) {
+    userCoords = geocoded;
+    showGpsBanner(true);
+  } else {
+    // Fall back to GPS
+    try {
+      userCoords = await getLocation();
+    } catch {
+      userCoords = ATLANTA_FALLBACK;
+      locationDenied = true;
+      showGpsBanner(true);
+    }
   }
-  showGpsBanner(locationDenied);
 
   let weather;
   try {

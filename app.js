@@ -5,6 +5,9 @@ const CACHE_TTL = 21600; // 6 hours in seconds
 // Atlanta fallback coordinates
 const ATLANTA_FALLBACK = { lat: 33.749, lng: -84.388 };
 
+// Overpass API radius in meters (80 km ≈ 50 miles as base pool, filtered further by drive time)
+const OVERPASS_RADIUS_M = 120000; // 120 km / ~75 miles
+
 async function getLocation() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject("Geolocation not supported");
@@ -41,15 +44,19 @@ function haversineDistance(coord1, coord2) {
 }
 
 function getCached(key) {
-  const item = localStorage.getItem(key);
-  if (!item) return null;
-  const { data, timestamp } = JSON.parse(item);
-  if ((Date.now() / 1000) - timestamp > CACHE_TTL) return null;
-  return data;
+  try {
+    const item = localStorage.getItem(key);
+    if (!item) return null;
+    const { data, timestamp } = JSON.parse(item);
+    if ((Date.now() / 1000) - timestamp > CACHE_TTL) return null;
+    return data;
+  } catch { return null; }
 }
 
 function setCache(key, data) {
-  localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() / 1000 }));
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() / 1000 }));
+  } catch { /* storage unavailable */ }
 }
 
 async function fetchWeather(lat, lng) {
@@ -72,6 +79,176 @@ async function fetchWeather(lat, lng) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Overpass API — fetch real fishing spots near a coordinate
+// ---------------------------------------------------------------------------
+async function fetchFishingSpotsNearby(lat, lng) {
+  const cacheKey = `spots_${lat.toFixed(2)}_${lng.toFixed(2)}`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  // Query for nodes/ways/relations tagged leisure=fishing or sport=fishing
+  // within OVERPASS_RADIUS_M of the user's location
+  const query = `
+[out:json][timeout:25];
+(
+  node["leisure"="fishing"](around:${OVERPASS_RADIUS_M},${lat},${lng});
+  node["sport"="fishing"](around:${OVERPASS_RADIUS_M},${lat},${lng});
+  node["amenity"="fishing"](around:${OVERPASS_RADIUS_M},${lat},${lng});
+  way["leisure"="fishing"](around:${OVERPASS_RADIUS_M},${lat},${lng});
+  way["sport"="fishing"](around:${OVERPASS_RADIUS_M},${lat},${lng});
+  node["natural"="water"]["fishing"](around:${OVERPASS_RADIUS_M},${lat},${lng});
+  way["natural"="water"]["name"](around:${OVERPASS_RADIUS_M},${lat},${lng});
+  relation["leisure"="park"]["name"](around:${OVERPASS_RADIUS_M},${lat},${lng});
+);
+out center 60;
+`;
+
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(query)
+    });
+    if (!res.ok) throw new Error(`Overpass error: ${res.status}`);
+    const json = await res.json();
+    const spots = normalizeOverpassResults(json.elements, lat, lng);
+    if (spots.length > 0) {
+      setCache(cacheKey, spots);
+    }
+    return spots;
+  } catch (err) {
+    console.warn('Overpass fetch failed:', err);
+    return [];
+  }
+}
+
+// Map Overpass tags → our location schema
+function normalizeOverpassResults(elements, userLat, userLng) {
+  const seen = new Set();
+  const results = [];
+
+  for (const el of elements) {
+    // Resolve coordinates (node vs way/relation with center)
+    const elLat = el.lat ?? el.center?.lat;
+    const elLng = el.lon ?? el.center?.lon;
+    if (!elLat || !elLng) continue;
+
+    const tags = el.tags || {};
+    const name = tags.name || tags['name:en'] || null;
+    if (!name) continue; // skip unnamed features — not useful to users
+
+    // De-duplicate by name to avoid OSM polygon + node duplicates
+    const nameKey = name.toLowerCase().trim();
+    if (seen.has(nameKey)) continue;
+    seen.add(nameKey);
+
+    // Infer accessibility
+    let accessibility = 'Clear Bank';
+    if (tags.leisure === 'fishing' && tags.fishing === 'dock') accessibility = 'Dock';
+    if (tags.man_made === 'pier' || tags.man_made === 'jetty') accessibility = 'Dock';
+    if (tags.leisure === 'fishing') accessibility = 'Clear Bank';
+    if (tags.access === 'yes' && tags.fishing) accessibility = 'Clear Bank';
+
+    // Infer amenities from OSM tags
+    const amenities = {
+      restrooms: !!(tags.toilets || tags['toilets:disposal'] || tags['amenity'] === 'toilets'),
+      playground: !!(tags.playground || tags['leisure'] === 'playground'),
+      picnicTables: !!(tags['leisure'] === 'picnic_table' || tags['amenity'] === 'picnic_site' || tags.picnic_table === 'yes'),
+      shadedArea: !!(tags.natural === 'wood' || tags.natural === 'tree_row' || tags.landuse === 'forest')
+    };
+
+    // Infer species from OSM fish tags or regional heuristics
+    const fishTag = tags.fish || tags.species || '';
+    const targetSpecies = fishTag
+      ? fishTag.split(';').map(s => s.trim()).filter(Boolean)
+      : inferSpecies(tags, elLat);
+
+    // Fees
+    const fees = {
+      parking: tags.fee ? `$${tags.fee}` : (tags['fee:parking'] || 'Check Locally'),
+      fishing: tags['fishing:license'] || 'License May Be Required'
+    };
+
+    // Infer region from city/state tags or a reverse geocode fallback label
+    const region = [tags['addr:city'], tags['addr:state']].filter(Boolean).join(', ') || inferRegionLabel(elLat, elLng);
+
+    results.push({
+      id: `osm-${el.type}-${el.id}`,
+      name,
+      coordinates: { lat: elLat, lng: elLng },
+      accessibility,
+      amenities,
+      targetSpecies,
+      fees,
+      region,
+      source: 'osm'
+    });
+  }
+
+  return results;
+}
+
+// Simple species heuristic based on latitude (US regions)
+function inferSpecies(tags, lat) {
+  if (lat > 44) return ['Walleye', 'Northern Pike', 'Perch', 'Bass'];
+  if (lat > 39) return ['Largemouth Bass', 'Crappie', 'Bluegill', 'Catfish'];
+  if (lat > 34) return ['Largemouth Bass', 'Bluegill', 'Catfish', 'Crappie'];
+  return ['Bass', 'Bluegill', 'Catfish', 'Bream'];
+}
+
+function inferRegionLabel(lat, lng) {
+  // Rough US region labels — good enough for display
+  if (lat > 45) return 'Northern Region';
+  if (lat > 40) return 'Midwest / Mid-Atlantic';
+  if (lat > 35) return 'Southeast';
+  if (lat > 30) return 'Deep South';
+  return 'Gulf Coast / South';
+}
+
+// ---------------------------------------------------------------------------
+// Fallback static spots (Atlanta area) — used only when Overpass returns nothing
+// ---------------------------------------------------------------------------
+const STATIC_FALLBACK_SPOTS = [
+  {
+    id: "lake-allatoona-001", name: "Lake Allatoona — McKaskey Creek",
+    coordinates: { lat: 34.1473, lng: -84.7229 }, accessibility: "Dock",
+    amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true },
+    targetSpecies: ["Largemouth Bass", "Crappie", "Bluegill"],
+    fees: { parking: "$5/day", fishing: "GA License Required" }, region: "Atlanta, GA", source: 'static'
+  },
+  {
+    id: "stone-mountain-lake-001", name: "Stone Mountain Park — Fishing Area",
+    coordinates: { lat: 33.8081, lng: -84.1452 }, accessibility: "Clear Bank",
+    amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true },
+    targetSpecies: ["Bass", "Bluegill", "Catfish"],
+    fees: { parking: "$20/vehicle", fishing: "Free with park entry" }, region: "Atlanta, GA", source: 'static'
+  },
+  {
+    id: "sweetwater-creek-001", name: "Sweetwater Creek State Park",
+    coordinates: { lat: 33.7490, lng: -84.6271 }, accessibility: "Clear Bank",
+    amenities: { restrooms: true, playground: false, picnicTables: true, shadedArea: true },
+    targetSpecies: ["Bass", "Bream", "Catfish"],
+    fees: { parking: "$5/day", fishing: "GA License Required" }, region: "Atlanta, GA", source: 'static'
+  },
+  {
+    id: "lake-lanier-001", name: "Lake Lanier — Sawnee Campground Dock",
+    coordinates: { lat: 34.1732, lng: -84.0168 }, accessibility: "Dock",
+    amenities: { restrooms: true, playground: false, picnicTables: true, shadedArea: true },
+    targetSpecies: ["Striped Bass", "Largemouth Bass", "Crappie"],
+    fees: { parking: "$5/day", fishing: "GA License Required" }, region: "Atlanta, GA", source: 'static'
+  },
+  {
+    id: "kennesaw-mountain-pond-001", name: "Kennesaw Mountain — Visitors Pond",
+    coordinates: { lat: 33.9748, lng: -84.5766 }, accessibility: "Clear Bank",
+    amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true },
+    targetSpecies: ["Bluegill", "Bass", "Catfish"],
+    fees: { parking: "Free", fishing: "GA License Required" }, region: "Atlanta, GA", source: 'static'
+  }
+];
+
+// ---------------------------------------------------------------------------
+// UI helpers
+// ---------------------------------------------------------------------------
 function showLoading(show) {
   const el = document.getElementById("loadingState");
   if (el) el.style.display = show ? "block" : "none";
@@ -90,6 +267,24 @@ function showGpsBanner(show) {
 function showWeatherBanner(show) {
   const el = document.getElementById("weatherBanner");
   if (el) el.style.display = show ? "block" : "none";
+}
+
+function showDataSourceBanner(source) {
+  let el = document.getElementById("dataSourceBanner");
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'dataSourceBanner';
+    el.className = 'px-4 py-2 text-[11px] font-medium border-b';
+    document.querySelector('header').after(el);
+  }
+  if (source === 'osm') {
+    el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-green-50 border-green-200 text-green-800';
+    el.textContent = '🗺️ Showing live fishing spots near your location from OpenStreetMap.';
+  } else {
+    el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-yellow-50 border-yellow-200 text-yellow-800';
+    el.textContent = '📋 Showing curated Atlanta-area spots — live data unavailable for this location.';
+  }
+  el.style.display = 'block';
 }
 
 function getCurrentMoonPhase() {
@@ -121,6 +316,7 @@ function renderCards(results) {
           <span>📍 ${loc.distMiles} mi</span>
           <span>•</span>
           <span>🚗 ~${Math.round(loc.estDriveHours * 60)} min</span>
+          ${loc.source === 'osm' ? '<span class="text-green-600">• Live</span>' : ''}
         </div>
         <div class="flex gap-1 mt-2">
           ${loc.targetSpecies.slice(0, 2).map(s => tagPill(s)).join('')}
@@ -156,6 +352,7 @@ function showDetailView(locId) {
         <div class="flex flex-wrap gap-2">
           ${tagPill(loc.accessibility, "bg-white/20 text-white")}
           ${tagPill(loc.region, "bg-white/20 text-white")}
+          ${loc.source === 'osm' ? tagPill('Live Data', 'bg-white/20 text-white') : ''}
         </div>
       </div>
 
@@ -173,7 +370,7 @@ function showDetailView(locId) {
           <div class="grid grid-cols-2 gap-3 mb-6">
             <div class="bg-blue-50 p-3 rounded-xl border border-blue-100">
               <div class="text-[10px] uppercase font-black text-blue-400 mb-1">Current Temp</div>
-              <div class="text-xl font-black text-blue-900">${loc.weather?.tempF || '--'}°F</div>
+              <div class="text-xl font-black text-blue-900">${loc.weather?.tempF ? Math.round(loc.weather.tempF) : '--'}°F</div>
             </div>
             <div class="bg-purple-50 p-3 rounded-xl border border-purple-100">
               <div class="text-[10px] uppercase font-black text-purple-400 mb-1">Moon Phase</div>
@@ -281,6 +478,9 @@ function showDetailView(locId) {
   `;
 }
 
+// ---------------------------------------------------------------------------
+// Main init — called on button click (and optionally on page load)
+// ---------------------------------------------------------------------------
 async function init() {
   showLoading(true);
   showGpsBanner(false);
@@ -293,7 +493,6 @@ async function init() {
   const geocoded = await geocodeLocation(locationInput);
   if (geocoded) {
     userCoords = geocoded;
-    showGpsBanner(true);
   } else {
     try {
       userCoords = await getLocation();
@@ -313,17 +512,13 @@ async function init() {
 
   const moonPhase = getCurrentMoonPhase();
 
-  let locations;
-  try {
-    locations = await fetch("data/locations.json").then(r => {
-      if (!r.ok) throw new Error("Could not load locations");
-      return r.json();
-    });
-  } catch (err) {
-    showLoading(false);
-    showError("Could not load fishing spots. " + err.message);
-    return;
+  // Fetch live spots from Overpass, fall back to static list if empty
+  let locations = await fetchFishingSpotsNearby(userCoords.lat, userCoords.lng);
+  const usingLiveData = locations.length > 0;
+  if (!usingLiveData) {
+    locations = STATIC_FALLBACK_SPOTS;
   }
+  showDataSourceBanner(usingLiveData ? 'osm' : 'static');
 
   const childAge = parseInt(document.getElementById("childAge").value) || 6;
   const maxDriveHours = parseFloat(document.getElementById("driveTime").value) || 1.5;
@@ -346,4 +541,3 @@ async function init() {
 }
 
 document.getElementById("searchBtn").addEventListener("click", init);
-

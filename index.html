@@ -5,21 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Let's Go Fishing 🎣</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    :root {
-      --green: #2D6A4F;
-      --blue: #48CAE4;
-      --sand: #F4E285;
-    }
+    :root { --green: #2D6A4F; --blue: #48CAE4; --sand: #F4E285; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner { animation: spin 1s linear infinite; }
     .tab-btn { @apply px-5 py-3 text-xs font-bold uppercase tracking-wider transition-all duration-200 border-b-2 border-transparent; }
-    .tab-active { @apply border-green-700 text-green-700 bg-white; }
+    .tab-active   { @apply border-green-700 text-green-700 bg-white; }
     .tab-inactive { @apply text-gray-400 bg-gray-50 hover:bg-gray-100 hover:text-gray-600; }
+    #mapContainer { height: calc(100dvh - 180px); width: 100%; }
+    .leaflet-popup-content-wrapper { border-radius: 12px; }
+    .map-marker-excellent { background:#22c55e; border:2px solid #fff; border-radius:50%; width:18px; height:18px; box-shadow:0 2px 6px rgba(0,0,0,.3); }
+    .map-marker-good      { background:#eab308; border:2px solid #fff; border-radius:50%; width:18px; height:18px; box-shadow:0 2px 6px rgba(0,0,0,.3); }
+    .map-marker-poor      { background:#ef4444; border:2px solid #fff; border-radius:50%; width:18px; height:18px; box-shadow:0 2px 6px rgba(0,0,0,.3); }
   </style>
 </head>
 <body class="bg-gray-50 font-sans text-gray-800">
-  <header class="sticky top-0 z-10 bg-white shadow-md px-4 py-3">
+  <header class="sticky top-0 z-20 bg-white shadow-md px-4 py-3">
     <div class="flex items-center justify-between">
       <h1 class="text-xl font-bold text-green-800 flex items-center gap-2">
         <span>🎣</span> Let's Go Fishing
@@ -62,13 +66,29 @@
   </div>
 
   <!-- List View -->
-  <main id="listView" class="px-4 py-5 max-w-2xl mx-auto">
+  <main id="listView" class="px-4 py-5 max-w-2xl mx-auto pb-24">
     <div id="loadingState" style="display:none;" class="text-center py-20">
       <div class="spinner inline-block w-8 h-8 border-4 border-green-700 border-t-transparent rounded-full mb-3"></div>
       <p class="text-gray-400 text-xs font-bold uppercase tracking-widest">Searching Waters...</p>
     </div>
     <div id="cardContainer" class="space-y-4"></div>
   </main>
+
+  <!-- Map View -->
+  <div id="mapView" style="display:none;" class="pb-20">
+    <div id="mapContainer"></div>
+    <div id="mapEmptyState" style="display:none;" class="text-center py-12 text-gray-400 text-sm px-6">
+      <div class="text-4xl mb-3">🗺️</div>
+      <p class="font-bold">No results to map yet.</p>
+      <p class="text-xs mt-1">Search for spots first, then switch to the Map tab.</p>
+    </div>
+  </div>
+
+  <!-- Saved View -->
+  <div id="savedView" style="display:none;" class="px-4 py-5 max-w-2xl mx-auto pb-24">
+    <h2 class="text-base font-black text-gray-700 mb-4">⭐ Saved Spots</h2>
+    <div id="savedContainer" class="space-y-4"></div>
+  </div>
 
   <!-- Detail View -->
   <div id="detailView" style="display:none;" class="max-w-2xl mx-auto px-4 py-5 pb-24">
@@ -80,16 +100,16 @@
   </div>
 
   <!-- Bottom Nav -->
-  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around py-3 z-10 shadow-lg">
-    <button onclick="showListView()" class="flex flex-col items-center text-[10px] font-bold uppercase text-green-700">
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t flex justify-around py-3 z-20 shadow-lg">
+    <button id="navExplore" onclick="showListView()" class="flex flex-col items-center text-[10px] font-bold uppercase text-green-700 min-w-[44px] min-h-[44px] justify-center">
       <svg class="w-6 h-6 mb-1" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
       Explore
     </button>
-    <button onclick="alert('Maps view coming soon!')" class="flex flex-col items-center text-[10px] font-bold uppercase text-gray-400">
+    <button id="navMap" onclick="showMapView()" class="flex flex-col items-center text-[10px] font-bold uppercase text-gray-400 min-w-[44px] min-h-[44px] justify-center">
       <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7l6-3 5.447 2.724a1 1 0 01.553.894v10.764a1 1 0 01-1.447.894L15 17l-6 3z"></path></svg>
       Map
     </button>
-    <button onclick="alert('Saved spots coming soon!')" class="flex flex-col items-center text-[10px] font-bold uppercase text-gray-400">
+    <button id="navSaved" onclick="showSavedView()" class="flex flex-col items-center text-[10px] font-bold uppercase text-gray-400 min-w-[44px] min-h-[44px] justify-center">
       <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>
       Saved
     </button>
@@ -100,41 +120,150 @@
   <script src="app.js"></script>
   <script>
     let allResults = [];
-    
+    let _leafletMap = null;
+    let _leafletMarkers = [];
+
+    // ---------- Nav state ----------
+    function setNavActive(id) {
+      ['navExplore','navMap','navSaved'].forEach(n => {
+        document.getElementById(n).className =
+          n === id
+            ? 'flex flex-col items-center text-[10px] font-bold uppercase text-green-700 min-w-[44px] min-h-[44px] justify-center'
+            : 'flex flex-col items-center text-[10px] font-bold uppercase text-gray-400 min-w-[44px] min-h-[44px] justify-center';
+      });
+    }
+
+    function hideAllViews() {
+      ['listView','mapView','savedView','detailView'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+    }
+
+    function showListView() {
+      hideAllViews();
+      document.getElementById('listView').style.display = 'block';
+      setNavActive('navExplore');
+      window.scrollTo(0, 0);
+    }
+
+    function showSavedView() {
+      hideAllViews();
+      document.getElementById('savedView').style.display = 'block';
+      setNavActive('navSaved');
+      renderSavedSpots();
+      window.scrollTo(0, 0);
+    }
+
+    // ---------- Map View ----------
+    function showMapView() {
+      hideAllViews();
+      document.getElementById('mapView').style.display = 'block';
+      setNavActive('navMap');
+
+      if (!allResults || allResults.length === 0) {
+        document.getElementById('mapEmptyState').style.display = 'block';
+        document.getElementById('mapContainer').style.display = 'none';
+        return;
+      }
+
+      document.getElementById('mapEmptyState').style.display = 'none';
+      document.getElementById('mapContainer').style.display = 'block';
+
+      // Init map once
+      if (!_leafletMap) {
+        _leafletMap = L.map('mapContainer', { zoomControl: true });
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 18
+        }).addTo(_leafletMap);
+      }
+
+      // Clear old markers
+      _leafletMarkers.forEach(m => m.remove());
+      _leafletMarkers = [];
+
+      const bounds = [];
+
+      allResults.forEach(loc => {
+        const markerClass = loc.score >= 70 ? 'map-marker-excellent'
+                          : loc.score >= 40 ? 'map-marker-good'
+                          : 'map-marker-poor';
+        const icon = L.divIcon({
+          className: '',
+          html: `<div class="${markerClass}"></div>`,
+          iconSize: [18, 18],
+          iconAnchor: [9, 9],
+          popupAnchor: [0, -12]
+        });
+
+        const scoreLabel = loc.score >= 70 ? '🟢 Excellent' : loc.score >= 40 ? '🟡 Good' : '🔴 Poor';
+        const marker = L.marker([loc.coordinates.lat, loc.coordinates.lng], { icon })
+          .addTo(_leafletMap)
+          .bindPopup(`
+            <div style="min-width:180px">
+              <p style="font-weight:800;font-size:13px;margin-bottom:4px">${loc.name}</p>
+              <p style="font-size:11px;color:#555;margin-bottom:6px">${scoreLabel} &nbsp;•&nbsp; Score: ${loc.score}</p>
+              <p style="font-size:11px;color:#555;margin-bottom:6px">📍 ${loc.distMiles} mi &nbsp;•&nbsp; 🚗 ~${Math.round(loc.estDriveHours * 60)} min</p>
+              <button onclick="showDetailView('${loc.id}')" style="background:#2D6A4F;color:#fff;border:none;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;width:100%">View Details</button>
+            </div>
+          `);
+
+        _leafletMarkers.push(marker);
+        bounds.push([loc.coordinates.lat, loc.coordinates.lng]);
+      });
+
+      if (bounds.length > 0) {
+        _leafletMap.fitBounds(bounds, { padding: [40, 40] });
+      }
+
+      // Invalidate size after view is shown (fixes grey tile issue)
+      setTimeout(() => _leafletMap && _leafletMap.invalidateSize(), 100);
+    }
+
+    // ---------- Score badge / tag ----------
     function scoreBadge(score) {
       const color = score >= 70 ? 'bg-green-500' : score >= 40 ? 'bg-yellow-500' : 'bg-red-500';
       const label = score >= 70 ? 'Excellent' : score >= 40 ? 'Good' : 'Poor';
       return `<span class="${color} text-white text-[10px] font-black uppercase px-2 py-1 rounded-md shadow-sm">${label} ${score}</span>`;
     }
 
-    function tagPill(label, color = "bg-gray-100 text-gray-600") {
+    function tagPill(label, color = 'bg-gray-100 text-gray-600') {
       return `<span class="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${color}">${label}</span>`;
     }
 
-    function showListView() {
-      document.getElementById("detailView").style.display = "none";
-      document.getElementById("listView").style.display = "block";
+    // ---------- Detail view ----------
+    function showDetailView(locId) {
+      // look in allResults first, then savedSpots
+      const saved = getSavedSpots();
+      const loc = allResults.find(l => l.id === locId) || saved.find(l => l.id === locId);
+      if (!loc) return;
+      hideAllViews();
+      document.getElementById('detailView').style.display = 'block';
       window.scrollTo(0, 0);
+      if (typeof renderDetailContent === 'function') renderDetailContent(loc);
     }
 
+    // ---------- Tab switching ----------
     function switchTab(tabName, locId) {
       const tabs = ['overview', 'fish', 'amenities', 'forecast'];
       tabs.forEach(t => {
-        const el = document.getElementById(`tab-${t}`);
-        if (el) el.style.display = t === tabName ? 'block' : 'none';
+        const el  = document.getElementById(`tab-${t}`);
         const btn = document.getElementById(`btn-${t}`);
-        if (btn) btn.className = t === tabName ? 'tab-btn tab-active flex-1' : 'tab-btn tab-inactive flex-1';
+        if (el)  el.style.display  = t === tabName ? 'block' : 'none';
+        if (btn) btn.className = `tab-btn flex-1 ${t === tabName ? 'tab-active' : 'tab-inactive'}`;
       });
       if (tabName === 'forecast') {
-        const loc = allResults.find(l => l.id === locId);
-        renderForecast(loc);
+        const saved = getSavedSpots();
+        const loc = allResults.find(l => l.id === locId) || saved.find(l => l.id === locId);
+        if (loc) renderForecast(loc);
       }
     }
 
+    // ---------- Moon helpers ----------
     function getMoonPhase(date) {
       const refNew = new Date('2000-01-06T18:14:00Z');
-      const diffMs = date - refNew;
-      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+      const diffDays = (date - refNew) / (1000 * 60 * 60 * 24);
       return (diffDays % 29.53) / 29.53;
     }
 
@@ -145,31 +274,58 @@
       if (phase < 0.4375) return '🌔';
       if (phase < 0.5625) return '🌕';
       if (phase < 0.6875) return '🌖';
-      if (phase < 0.8125) return '🌗'
+      if (phase < 0.8125) return '🌗';
       return '🌘';
     }
 
+    // ---------- Forecast (moon-only for now; upgraded in step 5) ----------
     function renderForecast(loc) {
-      const grid = document.getElementById("forecastGrid");
+      const grid = document.getElementById('forecastGrid');
       if (!grid) return;
-      grid.innerHTML = "";
-      
+      grid.innerHTML = '';
       const today = new Date();
       for (let i = 0; i < 30; i++) {
         const date = new Date(today);
         date.setDate(today.getDate() + i);
         const phase = getMoonPhase(date);
-        
-        // Simple fishability score based on moon phase
         const moonScore = 100 - (Math.abs((phase % 0.5) - 0.25) / 0.25 * 50);
         const color = moonScore > 80 ? 'bg-green-400' : moonScore > 60 ? 'bg-yellow-300' : 'bg-red-400';
-        
-        const dayEl = document.createElement("div");
+        const dayEl = document.createElement('div');
         dayEl.className = `h-8 flex flex-col items-center justify-center rounded-md text-[10px] font-bold ${color} border border-white/20`;
         dayEl.innerHTML = `<span>${date.getDate()}</span>`;
-        dayEl.title = `Date: ${date.toLocaleDateString()}\nMoon Phase: ${Math.round(phase * 100)}%\nScore: ${Math.round(moonScore)}`;
+        dayEl.title = `${date.toLocaleDateString()} · Moon: ${Math.round(phase*100)}% · Score: ${Math.round(moonScore)}`;
         grid.appendChild(dayEl);
       }
+    }
+
+    // ---------- Saved Spots (stubbed here; full impl in upgrade 2) ----------
+    function getSavedSpots() {
+      try { return JSON.parse(localStorage.getItem('savedSpots') || '[]'); } catch { return []; }
+    }
+    function renderSavedSpots() {
+      const container = document.getElementById('savedContainer');
+      const spots = getSavedSpots();
+      if (spots.length === 0) {
+        container.innerHTML = `<div class="text-center py-16 text-gray-400"><div class="text-4xl mb-3">🔖</div><p class="font-bold text-sm">No saved spots yet.</p><p class="text-xs mt-1">Hit the bookmark icon on any spot card to save it.</p></div>`;
+        return;
+      }
+      container.innerHTML = spots.map(loc => `
+        <div onclick="showDetailView('${loc.id}')" class="bg-white rounded-xl shadow-sm border p-4 flex gap-4 items-center cursor-pointer active:scale-[0.98] transition-all">
+          <div class="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">${loc.accessibility === 'Dock' ? '🛶' : '🏖️'}</div>
+          <div class="flex-1">
+            <h3 class="font-bold text-gray-800 leading-tight text-sm">${loc.name}</h3>
+            <p class="text-[11px] text-gray-500 mt-0.5">${loc.region}</p>
+          </div>
+          <button onclick="event.stopPropagation(); unsaveSpot('${loc.id}')" class="text-red-400 hover:text-red-600 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 19V5z"/></svg>
+          </button>
+        </div>
+      `).join('');
+    }
+    function unsaveSpot(id) {
+      const spots = getSavedSpots().filter(s => s.id !== id);
+      localStorage.setItem('savedSpots', JSON.stringify(spots));
+      renderSavedSpots();
     }
   </script>
 </body>

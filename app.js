@@ -1,4 +1,15 @@
 // app.js — Main application logic
+// LOCATION RESOLUTION RULES (strictly enforced):
+//   1. If the user types a specific place (address, city, landmark, POI),
+//      geocode it via Nominatim with addressdetails so we get the canonical
+//      centroid that Google Maps would use, then use ONLY those coords.
+//   2. GPS / Geolocation is used ONLY when locationInput is blank OR
+//      the user explicitly types "current" or "current location".
+//   3. Atlanta fallback is last-resort only — never used if the user
+//      typed something or if GPS succeeds.
+//   4. All distance calculations and Overpass queries use the resolved
+//      origin coords exclusively — no mixing of GPS + typed values.
+//
 // DATA FRESHNESS GUARANTEE:
 //   Every explicit "Find Spots" click busts both the weather and spots caches
 //   for the resolved coordinates, so all detail-view data always reflects
@@ -6,7 +17,7 @@
 
 const CACHE_TTL = 21600; // 6 hours in seconds
 
-// Atlanta fallback coordinates
+// Atlanta fallback — last resort only
 const ATLANTA_FALLBACK = { lat: 33.749, lng: -84.388 };
 
 // Overpass search radius — ~75 miles, filtered further by max drive time
@@ -15,7 +26,20 @@ const OVERPASS_RADIUS_M = 120000;
 // ---------------------------------------------------------------------------
 // Location helpers
 // ---------------------------------------------------------------------------
-async function getLocation() {
+
+/**
+ * Returns true only when the user explicitly asked for GPS.
+ * Blank input → use GPS (first load convenience).
+ * "current" or "current location" (case-insensitive) → use GPS.
+ * Anything else → geocode the typed string, never touch GPS.
+ */
+function isCurrentLocationRequest(input) {
+  if (!input || input.trim() === '') return true;
+  const v = input.trim().toLowerCase();
+  return v === 'current' || v === 'current location';
+}
+
+async function getGpsLocation() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject('Geolocation not supported');
     navigator.geolocation.getCurrentPosition(
@@ -25,19 +49,37 @@ async function getLocation() {
   });
 }
 
-async function geocodeLocation(locationString) {
-  if (!locationString || locationString.trim() === '' || locationString.toLowerCase().includes('current')) {
-    return null;
-  }
+/**
+ * Geocode any typed location string (address, city, landmark, POI)
+ * using Nominatim with addressdetails=1 to get the canonical representative
+ * point — the same centroid Google Maps uses for named places.
+ *
+ * Returns { lat, lng, displayName } on success, null on failure.
+ * Must NOT be called when input is blank or a 'current' request.
+ */
+async function geocodeTypedLocation(locationString) {
   try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationString)}&format=json&limit=1`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'LetsGoFishingApp/1.0' } });
-    if (!res.ok) throw new Error('Geocoding failed');
+    // Use addressdetails so Nominatim returns the precise canonical place point.
+    // Limit=1 picks the most relevant result (same ranking as Nominatim's
+    // default relevance sort, which mirrors what major map services use).
+    const url = `https://nominatim.openstreetmap.org/search` +
+      `?q=${encodeURIComponent(locationString.trim())}` +
+      `&format=json&limit=1&addressdetails=1`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'LetsGoFishingApp/1.0 (kid-friendly fishing finder)' }
+    });
+    if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
     const data = await res.json();
-    if (data.length === 0) throw new Error('Location not found');
-    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    if (!data || data.length === 0) throw new Error(`No results for: ${locationString}`);
+
+    const place = data[0];
+    return {
+      lat: parseFloat(place.lat),
+      lng: parseFloat(place.lon),
+      displayName: place.display_name || locationString
+    };
   } catch (err) {
-    console.warn('Geocoding error:', err);
+    console.warn('[geocodeTypedLocation] failed:', err.message);
     return null;
   }
 }
@@ -47,14 +89,13 @@ function haversineDistance(coord1, coord2) {
   const dLat = (coord2.lat - coord1.lat) * Math.PI / 180;
   const dLng = (coord2.lng - coord1.lng) * Math.PI / 180;
   const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(coord1.lat * Math.PI / 180) * Math.cos(coord2.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    Math.cos(coord1.lat * Math.PI / 180) * Math.cos(coord2.lat * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // ---------------------------------------------------------------------------
-// Cache — keyed at 3 decimal places (~110m resolution) to prevent
-// cross-location collisions that plagued the 2-decimal (1.1km) scheme.
-// Force-busting: pass forceRefresh=true on explicit user searches.
+// Cache — keyed at 3 decimal places (~110m resolution)
 // ---------------------------------------------------------------------------
 function coordKey(lat, lng) {
   return `${lat.toFixed(3)}_${lng.toFixed(3)}`;
@@ -80,8 +121,6 @@ function setCache(key, data) {
 }
 
 function bustCacheForCoords(lat, lng) {
-  // Remove both weather and spots cache entries for these coordinates
-  // so that an explicit new search always fetches fresh data.
   const key = coordKey(lat, lng);
   try {
     localStorage.removeItem(`weather_${key}`);
@@ -90,11 +129,11 @@ function bustCacheForCoords(lat, lng) {
 }
 
 // ---------------------------------------------------------------------------
-// Weather fetch — per-spot weather using the spot's own coordinates
-// so each card shows weather accurate to its location, not the user's origin.
+// Weather fetch — per-spot coords, always fresh on explicit search
 // ---------------------------------------------------------------------------
 async function fetchWeather(lat, lng, forceRefresh = false) {
-  const hasKey = typeof CONFIG !== 'undefined' && CONFIG.OPENWEATHER_API_KEY && CONFIG.OPENWEATHER_API_KEY.length > 10;
+  const hasKey = typeof CONFIG !== 'undefined' &&
+    CONFIG.OPENWEATHER_API_KEY && CONFIG.OPENWEATHER_API_KEY.length > 10;
   if (!hasKey) return { tempF: 68, pressureHpa: 1016, usingFallback: true };
 
   const cacheKey = `weather_${coordKey(lat, lng)}`;
@@ -104,7 +143,8 @@ async function fetchWeather(lat, lng, forceRefresh = false) {
   }
 
   try {
-    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${CONFIG.OPENWEATHER_API_KEY}&units=imperial`;
+    const url = `https://api.openweathermap.org/data/2.5/weather` +
+      `?lat=${lat}&lon=${lng}&appid=${CONFIG.OPENWEATHER_API_KEY}&units=imperial`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`OWM error: ${res.status}`);
     const json = await res.json();
@@ -124,8 +164,7 @@ async function fetchWeather(lat, lng, forceRefresh = false) {
 }
 
 // ---------------------------------------------------------------------------
-// Overpass API — live fishing spots near user coordinates
-// forceRefresh busts the cache so a new location always gets fresh spots.
+// Overpass API — live fishing spots around the resolved origin coords
 // ---------------------------------------------------------------------------
 async function fetchFishingSpotsNearby(lat, lng, forceRefresh = false) {
   const cacheKey = `spots_${coordKey(lat, lng)}`;
@@ -206,7 +245,8 @@ function normalizeOverpassResults(elements) {
       fishing: tags['fishing:license'] || 'License May Be Required'
     };
 
-    const region = [tags['addr:city'], tags['addr:state']].filter(Boolean).join(', ') || inferRegionLabel(elLat);
+    const region = [tags['addr:city'], tags['addr:state']].filter(Boolean).join(', ')
+      || inferRegionLabel(elLat);
 
     results.push({
       id: `osm-${el.type}-${el.id}`,
@@ -239,42 +279,39 @@ function inferRegionLabel(lat) {
 }
 
 // ---------------------------------------------------------------------------
-// Dynamic gear guide — recommendations keyed to the spot's actual species
+// Dynamic gear guide
 // ---------------------------------------------------------------------------
 const GEAR_DB = {
-  // Beginner rigs (ages 3-7) by primary species
   beginner: {
-    default:         { rod: '4ft Zebco spin-cast (Dock Demon)',    line: '6lb mono',  rig: 'Small bobber, #8 gold hook',         bait: 'red wigglers or corn' },
-    'Bluegill':      { rod: '4ft Zebco spin-cast (Dock Demon)',    line: '6lb mono',  rig: 'Small bobber, #8 gold hook',         bait: 'red worms or crickets' },
-    'Bream':         { rod: '4ft Zebco spin-cast (Dock Demon)',    line: '6lb mono',  rig: 'Small bobber, #8 gold hook',         bait: 'red worms or crickets' },
-    'Crappie':       { rod: '4ft Zebco spin-cast',                 line: '6lb mono',  rig: 'Small bobber, #6 hook, split shot',  bait: 'small minnow or jig (1/32oz)' },
-    'Catfish':       { rod: '5ft medium spin-cast',                line: '10lb mono', rig: 'Bottom rig, #4 circle hook',         bait: 'chicken liver or nightcrawlers' },
-    'Bass':          { rod: '4.5ft light spin-cast',               line: '8lb mono',  rig: 'Wacky rig or small spinner',         bait: 'plastic worm or curly tail grub' },
-    'Largemouth Bass': { rod: '4.5ft light spin-cast',             line: '8lb mono',  rig: 'Wacky rig or small inline spinner',  bait: 'plastic worm or live shiner' },
-    'Walleye':       { rod: '5ft medium spin-cast',                line: '8lb mono',  rig: 'Slip bobber, #4 hook',               bait: 'nightcrawler on a plain hook' },
-    'Northern Pike': { rod: '5ft medium-heavy spin-cast',          line: '14lb mono', rig: 'Wire leader, #2 treble hook',        bait: 'large shiner or flashy spoon' },
-    'Perch':         { rod: '4ft light spin-cast',                 line: '6lb mono',  rig: 'Small bobber, #8 hook',              bait: 'small minnow or waxworm' },
-    'Striped Bass':  { rod: '5ft medium spin-cast',                line: '12lb mono', rig: 'Float rig, #2 hook',                 bait: 'live shad or cut bait' },
+    default:           { rod: '4ft Zebco spin-cast (Dock Demon)',    line: '6lb mono',  rig: 'Small bobber, #8 gold hook',         bait: 'red wigglers or corn' },
+    'Bluegill':        { rod: '4ft Zebco spin-cast (Dock Demon)',    line: '6lb mono',  rig: 'Small bobber, #8 gold hook',         bait: 'red worms or crickets' },
+    'Bream':           { rod: '4ft Zebco spin-cast (Dock Demon)',    line: '6lb mono',  rig: 'Small bobber, #8 gold hook',         bait: 'red worms or crickets' },
+    'Crappie':         { rod: '4ft Zebco spin-cast',                 line: '6lb mono',  rig: 'Small bobber, #6 hook, split shot',  bait: 'small minnow or jig (1/32oz)' },
+    'Catfish':         { rod: '5ft medium spin-cast',                line: '10lb mono', rig: 'Bottom rig, #4 circle hook',         bait: 'chicken liver or nightcrawlers' },
+    'Bass':            { rod: '4.5ft light spin-cast',               line: '8lb mono',  rig: 'Wacky rig or small spinner',         bait: 'plastic worm or curly tail grub' },
+    'Largemouth Bass': { rod: '4.5ft light spin-cast',               line: '8lb mono',  rig: 'Wacky rig or small inline spinner',  bait: 'plastic worm or live shiner' },
+    'Walleye':         { rod: '5ft medium spin-cast',                line: '8lb mono',  rig: 'Slip bobber, #4 hook',               bait: 'nightcrawler on a plain hook' },
+    'Northern Pike':   { rod: '5ft medium-heavy spin-cast',          line: '14lb mono', rig: 'Wire leader, #2 treble hook',        bait: 'large shiner or flashy spoon' },
+    'Perch':           { rod: '4ft light spin-cast',                 line: '6lb mono',  rig: 'Small bobber, #8 hook',              bait: 'small minnow or waxworm' },
+    'Striped Bass':    { rod: '5ft medium spin-cast',                line: '12lb mono', rig: 'Float rig, #2 hook',                 bait: 'live shad or cut bait' },
   },
-  // Junior pro rigs (ages 8+)
   pro: {
-    default:         { rod: "5'6\" medium-light spinning combo",   line: '8lb mono',  rig: '1/8oz rooster tail or Senko worm',  bait: 'soft plastic worms near structure' },
-    'Bluegill':      { rod: "5' ultralight spinning",              line: '4lb fluoro', rig: '1/32oz jig head',                  bait: 'small tube or twister tail' },
-    'Bream':         { rod: "5' ultralight spinning",              line: '4lb fluoro', rig: '1/32oz jig head',                  bait: 'small tube or cricket on a hook' },
-    'Crappie':       { rod: "6' light spinning",                   line: '6lb fluoro', rig: '1/16oz marabou jig',               bait: 'crappie tube or small minnow' },
-    'Catfish':       { rod: "6'6\" medium-heavy spinning",         line: '17lb mono', rig: 'Slip sinker rig, #1 circle hook',   bait: 'stink bait or cut shad' },
-    'Bass':          { rod: "6' medium spinning",                  line: '10lb fluoro', rig: '3/16oz Texas-rig',                bait: '4" plastic worm or Senko' },
-    'Largemouth Bass': { rod: "6'6\" medium baitcaster or spinning", line: '12lb fluoro', rig: '1/4oz jig or Texas-rig',        bait: 'creature bait or swim jig near cover' },
-    'Walleye':       { rod: "6' medium spinning",                  line: '8lb fluoro', rig: '1/4oz jig head',                   bait: '3" paddle tail swimbait or live crawler' },
-    'Northern Pike': { rod: "6'6\" medium-heavy spinning",         line: '20lb braid + wire leader', rig: 'Inline spinner or swim bait', bait: '5" swimbait or large spoon' },
-    'Perch':         { rod: "5' light spinning",                   line: '6lb mono',  rig: '1/16oz jig or drop shot',           bait: 'small minnow or perch eye' },
-    'Striped Bass':  { rod: "7' medium-heavy spinning",            line: '20lb braid', rig: 'Bucktail jig or live-liner rig',   bait: 'live bunker or large swimshad' },
+    default:           { rod: "5'6\" medium-light spinning combo",   line: '8lb mono',  rig: '1/8oz rooster tail or Senko worm',  bait: 'soft plastic worms near structure' },
+    'Bluegill':        { rod: "5' ultralight spinning",              line: '4lb fluoro', rig: '1/32oz jig head',                  bait: 'small tube or twister tail' },
+    'Bream':           { rod: "5' ultralight spinning",              line: '4lb fluoro', rig: '1/32oz jig head',                  bait: 'small tube or cricket on a hook' },
+    'Crappie':         { rod: "6' light spinning",                   line: '6lb fluoro', rig: '1/16oz marabou jig',               bait: 'crappie tube or small minnow' },
+    'Catfish':         { rod: "6'6\" medium-heavy spinning",         line: '17lb mono', rig: 'Slip sinker rig, #1 circle hook',   bait: 'stink bait or cut shad' },
+    'Bass':            { rod: "6' medium spinning",                  line: '10lb fluoro', rig: '3/16oz Texas-rig',                bait: '4" plastic worm or Senko' },
+    'Largemouth Bass': { rod: "6'6\" medium baitcaster or spinning", line: '12lb fluoro', rig: '1/4oz jig or Texas-rig',          bait: 'creature bait or swim jig near cover' },
+    'Walleye':         { rod: "6' medium spinning",                  line: '8lb fluoro', rig: '1/4oz jig head',                   bait: '3" paddle tail swimbait or live crawler' },
+    'Northern Pike':   { rod: "6'6\" medium-heavy spinning",         line: '20lb braid + wire leader', rig: 'Inline spinner or swim bait', bait: '5" swimbait or large spoon' },
+    'Perch':           { rod: "5' light spinning",                   line: '6lb mono',  rig: '1/16oz jig or drop shot',           bait: 'small minnow or perch eye' },
+    'Striped Bass':    { rod: "7' medium-heavy spinning",            line: '20lb braid', rig: 'Bucktail jig or live-liner rig',   bait: 'live bunker or large swimshad' },
   }
 };
 
 function getGearRecommendation(targetSpecies, isBeginnerAge) {
   const db = isBeginnerAge ? GEAR_DB.beginner : GEAR_DB.pro;
-  // Find the first species in the spot's list that has a specific entry
   for (const sp of targetSpecies) {
     if (db[sp]) return db[sp];
   }
@@ -283,8 +320,7 @@ function getGearRecommendation(targetSpecies, isBeginnerAge) {
 
 function renderGearGuide(loc) {
   const beginnerGear = getGearRecommendation(loc.targetSpecies, true);
-  const proGear = getGearRecommendation(loc.targetSpecies, false);
-  const primarySpecies = loc.targetSpecies[0] || 'fish';
+  const proGear      = getGearRecommendation(loc.targetSpecies, false);
 
   return `
     <div class="space-y-4">
@@ -318,18 +354,18 @@ function renderGearGuide(loc) {
 }
 
 // ---------------------------------------------------------------------------
-// Pro Tip — species-specific, location-aware
+// Pro Tip
 // ---------------------------------------------------------------------------
 function getProTip(loc) {
   const species = loc.targetSpecies[0] || 'panfish';
-  const isDock = loc.accessibility === 'Dock';
+  const isDock  = loc.accessibility === 'Dock';
   const tips = {
-    'Bluegill':        isDock ? `Drop a cricket right under the dock's shadow — Bluegill stack there all morning.` : `Work the shady bank edges with a bobber and worm early in the morning.`,
+    'Bluegill':        isDock ? `Drop a cricket right under the dock's shadow — Bluegill stack there all morning.`       : `Work the shady bank edges with a bobber and worm early in the morning.`,
     'Bream':           `Bream love the shade. Cast near overhanging branches and let the bait settle naturally.`,
-    'Crappie':         isDock ? `Vertical jig along the dock pilings — Crappie suspend at 4–8ft around structure.` : `Cast parallel to any fallen logs or brush piles. Crappie love ambush cover.`,
-    'Catfish':         `Set a bottom bait near the deepest hole you can find and let it sit. Catfish do the work for you — great for keeping young anglers patient.`,
-    'Bass':            isDock ? `Flip a plastic worm right to the dock pilings — Bass use structure as ambush points.` : `Walk the bank slowly and cast to any shady pockets or visible cover.`,
-    'Largemouth Bass': isDock ? `Flip a creature bait tight to dock pilings on the shady side — Bass ambush from structure.` : `Target any visible cover (stumps, laydowns, grass edges) with a slow-rolled worm.`,
+    'Crappie':         isDock ? `Vertical jig along the dock pilings — Crappie suspend at 4–8ft around structure.`      : `Cast parallel to any fallen logs or brush piles. Crappie love ambush cover.`,
+    'Catfish':         `Set a bottom bait near the deepest hole you can find and let it sit. Catfish do the work for you.`,
+    'Bass':            isDock ? `Flip a plastic worm right to the dock pilings — Bass use structure as ambush points.`   : `Walk the bank slowly and cast to any shady pockets or visible cover.`,
+    'Largemouth Bass': isDock ? `Flip a creature bait tight to dock pilings on the shady side.`                         : `Target any visible cover (stumps, laydowns, grass edges) with a slow-rolled worm.`,
     'Walleye':         `Walleye are most active at dawn and dusk. Work a jig slowly along the bottom near drop-offs.`,
     'Northern Pike':   `Pike are aggressive — cast a flashy spoon or large swimbait and retrieve quickly. Watch for follows!`,
     'Perch':           `School perch together — once you catch one, drop back to the same spot. They travel in groups.`,
@@ -391,7 +427,12 @@ function showLoading(show) {
 
 function showError(msg) {
   const container = document.getElementById('cardContainer');
-  container.innerHTML = `<div class="text-center mt-8 p-4"><p class="text-red-500 font-semibold">⚠️ Something went wrong</p><p class="text-gray-500 text-sm mt-1">${msg}</p><button onclick="init()" class="mt-3 bg-green-700 text-white px-4 py-2 rounded text-sm">Try Again</button></div>`;
+  container.innerHTML = `
+    <div class="text-center mt-8 p-4">
+      <p class="text-red-500 font-semibold">⚠️ Something went wrong</p>
+      <p class="text-gray-500 text-sm mt-1">${msg}</p>
+      <button onclick="init()" class="mt-3 bg-green-700 text-white px-4 py-2 rounded text-sm">Try Again</button>
+    </div>`;
 }
 
 function showGpsBanner(show) {
@@ -404,12 +445,32 @@ function showWeatherBanner(show) {
   if (el) el.style.display = show ? 'block' : 'none';
 }
 
+/**
+ * Shows a banner describing the resolved origin with source attribution.
+ * Passes the resolved coords, display name, and GPS/geocoded flag for context.
+ */
+function showLocationBanner(displayName, usingGps) {
+  let el = document.getElementById('locationResolutionBanner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'locationResolutionBanner';
+    document.querySelector('header').after(el);
+  }
+  el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-indigo-50 border-indigo-200 text-indigo-800';
+  el.textContent = usingGps
+    ? `📍 Using your current GPS location.`
+    : `📍 Showing spots near: ${displayName}`;
+  el.style.display = 'block';
+}
+
 function showDataSourceBanner(source) {
   let el = document.getElementById('dataSourceBanner');
   if (!el) {
     el = document.createElement('div');
     el.id = 'dataSourceBanner';
-    document.querySelector('header').after(el);
+    // Insert after the location banner if it exists, else after header
+    const locationBanner = document.getElementById('locationResolutionBanner');
+    (locationBanner || document.querySelector('header')).after(el);
   }
   if (source === 'osm') {
     el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-green-50 border-green-200 text-green-800';
@@ -463,31 +524,23 @@ function renderCards(results) {
 }
 
 // ---------------------------------------------------------------------------
-// Detail view — all data sourced directly from the enriched loc object
-// which is set fresh on every init() call (no stale globals).
+// Detail view
 // ---------------------------------------------------------------------------
 function showDetailView(locId) {
   const loc = allResults.find(l => l.id === locId);
   if (!loc) return;
 
-  document.getElementById('listView').style.display = 'none';
+  document.getElementById('listView').style.display   = 'none';
   document.getElementById('detailView').style.display = 'block';
   window.scrollTo(0, 0);
 
   const moonPhase = getCurrentMoonPhase();
-  const moonIcon = getMoonIcon(moonPhase);
+  const moonIcon  = getMoonIcon(moonPhase);
 
-  // Weather values — from the loc's own fetched weather, not a global
-  const tempDisplay = (loc.weather && !loc.weather.usingFallback)
-    ? `${Math.round(loc.weather.tempF)}°F`
-    : '--°F';
-  const pressureDisplay = (loc.weather && !loc.weather.usingFallback)
-    ? `${loc.weather.pressureHpa} hPa`
-    : '-- hPa';
-  const windDisplay = (loc.weather && loc.weather.windMph != null && !loc.weather.usingFallback)
-    ? `${Math.round(loc.weather.windMph)} mph`
-    : '-- mph';
-  const weatherNote = (loc.weather && loc.weather.usingFallback)
+  const tempDisplay     = (loc.weather && !loc.weather.usingFallback) ? `${Math.round(loc.weather.tempF)}°F`         : '--°F';
+  const pressureDisplay = (loc.weather && !loc.weather.usingFallback) ? `${loc.weather.pressureHpa} hPa`             : '-- hPa';
+  const windDisplay     = (loc.weather && loc.weather.windMph != null && !loc.weather.usingFallback) ? `${Math.round(loc.weather.windMph)} mph` : '-- mph';
+  const weatherNote     = (loc.weather && loc.weather.usingFallback)
     ? '<p class="text-[10px] text-yellow-600 mt-1">⚠️ Estimated weather — add API key for live data</p>'
     : `<p class="text-[10px] text-gray-400 mt-1">${loc.weather.description || ''}</p>`;
 
@@ -508,7 +561,6 @@ function showDetailView(locId) {
         </div>
       </div>
 
-      <!-- Tabs -->
       <div class="flex border-b bg-gray-50">
         <button id="btn-overview"  onclick="switchTab('overview','${loc.id}')"  class="tab-btn tab-active flex-1">Overview</button>
         <button id="btn-fish"      onclick="switchTab('fish','${loc.id}')"      class="tab-btn tab-inactive flex-1">Fish &amp; Gear</button>
@@ -517,8 +569,6 @@ function showDetailView(locId) {
       </div>
 
       <div class="p-5">
-
-        <!-- Overview Tab -->
         <div id="tab-overview">
           <div class="grid grid-cols-3 gap-3 mb-6">
             <div class="bg-blue-50 p-3 rounded-xl border border-blue-100">
@@ -535,7 +585,6 @@ function showDetailView(locId) {
               <div class="text-lg font-black text-purple-900">${moonIcon}</div>
             </div>
           </div>
-
           <h4 class="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Top Species Here</h4>
           <div class="flex flex-wrap gap-2 mb-6">
             ${loc.targetSpecies.map(s => `
@@ -545,7 +594,6 @@ function showDetailView(locId) {
               </div>
             `).join('')}
           </div>
-
           <a href="https://www.google.com/maps/dir/?api=1&destination=${loc.coordinates.lat},${loc.coordinates.lng}"
             target="_blank"
             class="block w-full bg-green-700 text-white text-center py-4 rounded-xl font-black shadow-lg shadow-green-700/20 active:scale-95 transition-all">
@@ -553,12 +601,10 @@ function showDetailView(locId) {
           </a>
         </div>
 
-        <!-- Fish & Gear Tab — dynamic per loc.targetSpecies -->
         <div id="tab-fish" style="display:none;">
           ${renderGearGuide(loc)}
         </div>
 
-        <!-- Amenities Tab -->
         <div id="tab-amenities" style="display:none;">
           <div class="grid grid-cols-2 gap-4">
             ${[
@@ -591,7 +637,6 @@ function showDetailView(locId) {
           </div>
         </div>
 
-        <!-- Forecast Tab -->
         <div id="tab-forecast" style="display:none;">
           <div id="forecastGrid" class="grid grid-cols-7 gap-1"></div>
           <div class="mt-4 flex gap-4 justify-center">
@@ -600,10 +645,8 @@ function showDetailView(locId) {
             <div class="flex items-center gap-1 text-[10px] font-bold"><div class="w-2 h-2 rounded bg-red-400"></div> Poor</div>
           </div>
         </div>
-
       </div>
 
-      <!-- Pro Tip — species-specific, location-aware -->
       <div class="mx-5 mb-5 bg-yellow-50 border-2 border-dashed border-yellow-200 rounded-xl p-4">
         <div class="text-[10px] uppercase font-black text-yellow-600 mb-1">Parent Pro-Tip</div>
         <p class="text-xs text-yellow-800 italic leading-relaxed font-medium">
@@ -615,14 +658,11 @@ function showDetailView(locId) {
 }
 
 // ---------------------------------------------------------------------------
-// Main init — called on every "Find Spots" click.
-// Flow:
-//  1. Resolve coordinates (typed input → Nominatim → GPS → Atlanta fallback)
-//  2. BUST cache for those coordinates (always fetch fresh on explicit search)
-//  3. Fetch weather at user origin (for score calculation baseline)
-//  4. Fetch live spots via Overpass
-//  5. For each spot, fetch its own weather concurrently (per-spot accuracy)
-//  6. Score, filter, sort — then render. All data in allResults[] is fresh.
+// Main init
+// LOCATION RESOLUTION (enforced here):
+//   Typed value → geocodeTypedLocation() → use those coords exclusively.
+//   Blank or 'current' → getGpsLocation() → fallback to Atlanta only if GPS fails.
+//   All Haversine distances and Overpass queries use the ONE resolved origin.
 // ---------------------------------------------------------------------------
 async function init() {
   showLoading(true);
@@ -630,26 +670,43 @@ async function init() {
   showWeatherBanner(false);
   document.getElementById('cardContainer').innerHTML = '';
 
-  // Step 1 — resolve user coordinates
-  const locationInput = document.getElementById('locationInput').value;
-  let userCoords;
+  const rawInput   = document.getElementById('locationInput').value;
+  const useGps     = isCurrentLocationRequest(rawInput);
+  let   userCoords = null;
+  let   displayName = '';
+  let   usingGps    = false;
 
-  const geocoded = await geocodeLocation(locationInput);
-  if (geocoded) {
-    userCoords = geocoded;
-  } else {
+  if (useGps) {
+    // User left blank or typed 'current' — try GPS first
     try {
-      userCoords = await getLocation();
+      userCoords  = await getGpsLocation();
+      displayName = 'your GPS location';
+      usingGps    = true;
     } catch {
-      userCoords = ATLANTA_FALLBACK;
+      userCoords  = ATLANTA_FALLBACK;
+      displayName = 'Atlanta, GA (fallback)';
       showGpsBanner(true);
+    }
+  } else {
+    // User typed a specific place — geocode it; never touch GPS
+    const geocoded = await geocodeTypedLocation(rawInput);
+    if (geocoded) {
+      userCoords  = { lat: geocoded.lat, lng: geocoded.lng };
+      displayName = geocoded.displayName;
+    } else {
+      // Geocode failed for the typed value — show error, do not silently fall back to GPS
+      showLoading(false);
+      showError(`Could not find "${rawInput}". Try a different city, address, or landmark.`);
+      return;
     }
   }
 
-  // Step 2 — bust stale cache so this search is always fresh data
+  showLocationBanner(displayName, usingGps);
+
+  // Bust stale cache so this search always fetches fresh data
   bustCacheForCoords(userCoords.lat, userCoords.lng);
 
-  // Step 3 — fetch origin weather (used for scoring)
+  // Fetch origin weather (used for scoring baseline)
   let originWeather;
   try {
     originWeather = await fetchWeather(userCoords.lat, userCoords.lng, true);
@@ -660,19 +717,19 @@ async function init() {
 
   const moonPhase = getCurrentMoonPhase();
 
-  // Step 4 — fetch live spots (force-refreshed, no stale cache)
-  let locations = await fetchFishingSpotsNearby(userCoords.lat, userCoords.lng, true);
-  const usingLiveData = locations.length > 0;
-  if (!usingLiveData) locations = STATIC_FALLBACK_SPOTS;
-  showDataSourceBanner(usingLiveData ? 'osm' : 'static');
+  // Fetch live spots near the resolved origin
+  let locations   = await fetchFishingSpotsNearby(userCoords.lat, userCoords.lng, true);
+  const usingLive = locations.length > 0;
+  if (!usingLive) locations = STATIC_FALLBACK_SPOTS;
+  showDataSourceBanner(usingLive ? 'osm' : 'static');
 
-  const childAge = parseInt(document.getElementById('childAge').value) || 6;
+  const childAge      = parseInt(document.getElementById('childAge').value)  || 6;
   const maxDriveHours = parseFloat(document.getElementById('driveTime').value) || 1.5;
 
-  // Step 5 — compute distances, filter, then fetch per-spot weather concurrently
+  // Compute distances from the resolved origin, filter, sort
   const candidates = locations
     .map(loc => {
-      const distMiles = haversineDistance(userCoords, loc.coordinates);
+      const distMiles    = haversineDistance(userCoords, loc.coordinates);
       const estDriveHours = distMiles / 45;
       return { ...loc, distMiles: Math.round(distMiles), estDriveHours };
     })
@@ -682,17 +739,17 @@ async function init() {
     })
     .sort((a, b) => a.distMiles - b.distMiles);
 
-  // Fetch each spot's own live weather in parallel — accurate to the spot's coords
+  // Fetch each spot's own weather in parallel (accurate to spot coords, not origin)
   const weatherPromises = candidates.map(loc =>
     fetchWeather(loc.coordinates.lat, loc.coordinates.lng, true)
       .catch(() => originWeather)
   );
   const spotWeathers = await Promise.all(weatherPromises);
 
-  // Step 6 — attach per-spot weather, score, finalize allResults[]
+  // Attach per-spot weather, score, finalize allResults[]
   allResults = candidates.map((loc, i) => {
     const spotWeather = spotWeathers[i] || originWeather;
-    const score = calcSuccessScore(loc, spotWeather, moonPhase, childAge);
+    const score       = calcSuccessScore(loc, spotWeather, moonPhase, childAge);
     return { ...loc, weather: spotWeather, score };
   });
 

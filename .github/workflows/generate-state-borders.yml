@@ -1,0 +1,99 @@
+name: Generate State Borders GeoJSON
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate simplified state borders
+        run: |
+          python3 - <<'EOF'
+          import urllib.request, json, math
+
+          url = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson"
+          print("Downloading Natural Earth 10m states...")
+          urllib.request.urlretrieve(url, '/tmp/ne_states.json')
+
+          with open('/tmp/ne_states.json') as f:
+              full = json.load(f)
+
+          us_features = [f for f in full['features'] if f['properties'].get('iso_a2') == 'US']
+          print(f"Found {len(us_features)} US features")
+
+          def simplify_rdp(points, epsilon):
+              if len(points) < 3: return points
+              start, end = points[0], points[-1]
+              max_dist, max_idx = 0, 0
+              dx, dy = end[0]-start[0], end[1]-start[1]
+              mag = math.sqrt(dx*dx + dy*dy)
+              for i in range(1, len(points)-1):
+                  dist = (abs(dx*(start[1]-points[i][1]) - (start[0]-points[i][0])*dy) / mag
+                          if mag else math.sqrt((points[i][0]-start[0])**2+(points[i][1]-start[1])**2))
+                  if dist > max_dist: max_dist, max_idx = dist, i
+              if max_dist > epsilon:
+                  return simplify_rdp(points[:max_idx+1], epsilon)[:-1] + simplify_rdp(points[max_idx:], epsilon)
+              return [start, end]
+
+          def simplify_geometry(geometry, epsilon=0.02):
+              t = geometry['type']
+              if t == 'Polygon':
+                  rings = [simplify_rdp(r, epsilon) for r in geometry['coordinates']]
+                  rings = [r for r in rings if len(r) >= 4]
+                  return {'type':'Polygon','coordinates':rings} if rings else None
+              elif t == 'MultiPolygon':
+                  polys = [[r for r in [simplify_rdp(ring, epsilon) for ring in poly] if len(r)>=4]
+                           for poly in geometry['coordinates']]
+                  polys = [p for p in polys if p]
+                  return {'type':'MultiPolygon','coordinates':polys} if polys else None
+              return geometry
+
+          STATE_ABBR = {
+              'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA',
+              'Colorado':'CO','Connecticut':'CT','Delaware':'DE','District of Columbia':'DC',
+              'Florida':'FL','Georgia':'GA','Hawaii':'HI','Idaho':'ID','Illinois':'IL',
+              'Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY','Louisiana':'LA',
+              'Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI','Minnesota':'MN',
+              'Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV',
+              'New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY',
+              'North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR',
+              'Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD',
+              'Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA',
+              'Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY'
+          }
+
+          features = []
+          for feat in us_features:
+              name = feat['properties'].get('name','')
+              abbr = STATE_ABBR.get(name, name[:2].upper())
+              sgeom = simplify_geometry(feat['geometry'], 0.02) or feat['geometry']
+              features.append({'type':'Feature','properties':{'name':name,'abbr':abbr},'geometry':sgeom})
+
+          output = {
+              'type': 'FeatureCollection',
+              'description': 'US State borders simplified using Ramer-Douglas-Peucker epsilon=0.02 degrees. Static reference data.',
+              'source': 'Natural Earth 1:10m (public domain)',
+              'generated': '2026-06-11',
+              'features': features
+          }
+
+          with open('data/us-states-borders.geojson', 'w') as f:
+              json.dump(output, f, separators=(',',':'))
+
+          import os
+          size = os.path.getsize('data/us-states-borders.geojson')
+          print(f"Written: {size/1024:.1f} KB, {len(features)} features")
+          EOF
+
+      - name: Commit generated file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/us-states-borders.geojson
+          git diff --staged --quiet || git commit -m "Generate us-states-borders.geojson from Natural Earth 1:10m"
+          git push

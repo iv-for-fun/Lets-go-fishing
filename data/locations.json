@@ -1,57 +1,582 @@
-[
-  {
-    "id": "lake-allatoona-001",
-    "name": "Lake Allatoona — McKaskey Creek",
-    "coordinates": { "lat": 34.1473, "lng": -84.7229 },
-    "accessibility": "Dock",
-    "amenities": { "restrooms": true, "playground": true, "picnicTables": true, "shadedArea": true },
-    "targetSpecies": ["Largemouth Bass", "Crappie", "Bluegill"],
-    "fees": { "parking": "$5/day", "fishing": "GA License Required" },
-    "region": "Atlanta, GA",
-    "driveTimeFromAtlanta": 45
-  },
-  {
-    "id": "stone-mountain-lake-001",
-    "name": "Stone Mountain Park — Fishing Area",
-    "coordinates": { "lat": 33.8081, "lng": -84.1452 },
-    "accessibility": "Clear Bank",
-    "amenities": { "restrooms": true, "playground": true, "picnicTables": true, "shadedArea": true },
-    "targetSpecies": ["Bass", "Bluegill", "Catfish"],
-    "fees": { "parking": "$20/vehicle (park admission)", "fishing": "Free with park entry" },
-    "region": "Atlanta, GA",
-    "driveTimeFromAtlanta": 30
-  },
-  {
-    "id": "sweetwater-creek-001",
-    "name": "Sweetwater Creek State Park",
-    "coordinates": { "lat": 33.7490, "lng": -84.6271 },
-    "accessibility": "Clear Bank",
-    "amenities": { "restrooms": true, "playground": false, "picnicTables": true, "shadedArea": true },
-    "targetSpecies": ["Bass", "Bream", "Catfish"],
-    "fees": { "parking": "$5/day", "fishing": "GA License Required" },
-    "region": "Atlanta, GA",
-    "driveTimeFromAtlanta": 25
-  },
-  {
-    "id": "lake-lanier-001",
-    "name": "Lake Lanier — Sawnee Campground Dock",
-    "coordinates": { "lat": 34.1732, "lng": -84.0168 },
-    "accessibility": "Dock",
-    "amenities": { "restrooms": true, "playground": false, "picnicTables": true, "shadedArea": true },
-    "targetSpecies": ["Striped Bass", "Largemouth Bass", "Crappie"],
-    "fees": { "parking": "$5/day", "fishing": "GA License Required" },
-    "region": "Atlanta, GA",
-    "driveTimeFromAtlanta": 60
-  },
-  {
-    "id": "kennesaw-mountain-pond-001",
-    "name": "Kennesaw Mountain — Visitors Pond",
-    "coordinates": { "lat": 33.9748, "lng": -84.5766 },
-    "accessibility": "Clear Bank",
-    "amenities": { "restrooms": true, "playground": true, "picnicTables": true, "shadedArea": true },
-    "targetSpecies": ["Bluegill", "Bass", "Catfish"],
-    "fees": { "parking": "Free", "fishing": "GA License Required" },
-    "region": "Atlanta, GA",
-    "driveTimeFromAtlanta": 35
-  }
-]
+{
+  "version": "1.0",
+  "description": "Curated kid-friendly fishing spots used as static fallback when live OSM data is unavailable. Add new cities by appending to the spots array — no code changes required.",
+  "spots": [
+
+    {
+      "id": "lake-allatoona-001",
+      "name": "Lake Allatoona — McKaskey Creek",
+      "city": "Atlanta",
+      "state": "GA",
+      "coordinates": { "lat": 34.1473, "lng": -84.7229 },
+      "accessibility": "Dock",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Largemouth Bass", "Crappie", "Bluegill"],
+      "fees": {
+        "parking": "$5/day",
+        "fishing": "GA License Required"
+      },
+      "region": "Atlanta, GA",
+      "source": "static",
+      "notes": "Excellent dock access, kid-friendly shallow coves along the north arm."
+    },
+
+    {
+      "id": "stone-mountain-lake-001",
+      "name": "Stone Mountain Park — Fishing Area",
+      "city": "Atlanta",
+      "state": "GA",
+      "coordinates": { "lat": 33.8081, "lng": -84.1452 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bluegill", "Catfish"],
+      "fees": {
+        "parking": "$20/vehicle",
+        "fishing": "Free with park entry"
+      },
+      "region": "Atlanta, GA",
+      "source": "static",
+      "notes": "Clear grassy banks, very family-friendly. Combine with the park's other attractions."
+    },
+
+    {
+      "id": "sweetwater-creek-001",
+      "name": "Sweetwater Creek State Park",
+      "city": "Atlanta",
+      "state": "GA",
+      "coordinates": { "lat": 33.7490, "lng": -84.6271 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bream", "Catfish"],
+      "fees": {
+        "parking": "$5/day",
+        "fishing": "GA License Required"
+      },
+      "region": "Atlanta, GA",
+      "source": "static",
+      "notes": "Scenic creek with easy bank access. Shaded trails nearby."
+    },
+
+    {
+      "id": "lake-lanier-sawnee-001",
+      "name": "Lake Lanier — Sawnee Campground Dock",
+      "city": "Atlanta",
+      "state": "GA",
+      "coordinates": { "lat": 34.1732, "lng": -84.0168 },
+      "accessibility": "Dock",
+      "amenities": {
+        "restrooms": true,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Striped Bass", "Largemouth Bass", "Crappie"],
+      "fees": {
+        "parking": "$5/day",
+        "fishing": "GA License Required"
+      },
+      "region": "Atlanta, GA",
+      "source": "static",
+      "notes": "Well-maintained Army Corps dock. Stripers run strong in spring and fall."
+    },
+
+    {
+      "id": "kennesaw-mountain-pond-001",
+      "name": "Kennesaw Mountain — Visitors Pond",
+      "city": "Atlanta",
+      "state": "GA",
+      "coordinates": { "lat": 33.9748, "lng": -84.5766 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bluegill", "Bass", "Catfish"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "GA License Required"
+      },
+      "region": "Atlanta, GA",
+      "source": "static",
+      "notes": "Free parking, very accessible for young kids. Small calm pond."
+    },
+
+    {
+      "id": "percy-priest-lake-001",
+      "name": "Percy Priest Lake — Seven Points Recreation Area",
+      "city": "Nashville",
+      "state": "TN",
+      "coordinates": { "lat": 36.1318, "lng": -86.5892 },
+      "accessibility": "Dock",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Largemouth Bass", "Crappie", "Bluegill", "Catfish"],
+      "fees": {
+        "parking": "$5/day",
+        "fishing": "TN License Required"
+      },
+      "region": "Nashville, TN",
+      "source": "static",
+      "notes": "One of the most popular family fishing lakes near Nashville. Multiple boat ramps and docks."
+    },
+
+    {
+      "id": "radnor-lake-001",
+      "name": "Radnor Lake State Park",
+      "city": "Nashville",
+      "state": "TN",
+      "coordinates": { "lat": 36.0601, "lng": -86.8293 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bluegill", "Crappie"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "TN License Required"
+      },
+      "region": "Nashville, TN",
+      "source": "static",
+      "notes": "Serene urban lake with clear bank access. Great for a short trip."
+    },
+
+    {
+      "id": "old-hickory-lake-001",
+      "name": "Old Hickory Lake — Shutes Branch Recreation Area",
+      "city": "Nashville",
+      "state": "TN",
+      "coordinates": { "lat": 36.3185, "lng": -86.6251 },
+      "accessibility": "Dock",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Crappie", "Largemouth Bass", "Bluegill", "Catfish"],
+      "fees": {
+        "parking": "$5/day",
+        "fishing": "TN License Required"
+      },
+      "region": "Nashville, TN",
+      "source": "static",
+      "notes": "Army Corps lake with great crappie fishing off the dock in spring."
+    },
+
+    {
+      "id": "beaman-park-creek-001",
+      "name": "Beaman Park — Little Marrowbone Creek",
+      "city": "Nashville",
+      "state": "TN",
+      "coordinates": { "lat": 36.2817, "lng": -86.9471 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bream", "Catfish"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "TN License Required"
+      },
+      "region": "Nashville, TN",
+      "source": "static",
+      "notes": "Small shaded creek perfect for beginners. Very low traffic."
+    },
+
+    {
+      "id": "mccown-overlook-001",
+      "name": "McCown Overlook — Percy Priest",
+      "city": "Nashville",
+      "state": "TN",
+      "coordinates": { "lat": 36.1501, "lng": -86.6102 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": false,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Largemouth Bass", "Bluegill", "Crappie"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "TN License Required"
+      },
+      "region": "Nashville, TN",
+      "source": "static",
+      "notes": "Quiet bank spot with great views. Best in early morning."
+    },
+
+    {
+      "id": "lake-norman-ramsey-001",
+      "name": "Lake Norman State Park — Fishing Pier",
+      "city": "Charlotte",
+      "state": "NC",
+      "coordinates": { "lat": 35.6634, "lng": -80.9298 },
+      "accessibility": "Dock",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Largemouth Bass", "Crappie", "Bluegill", "Catfish"],
+      "fees": {
+        "parking": "$7/day",
+        "fishing": "NC License Required"
+      },
+      "region": "Charlotte, NC",
+      "source": "static",
+      "notes": "State park with a dedicated fishing pier. Very family-friendly."
+    },
+
+    {
+      "id": "mountain-island-lake-001",
+      "name": "Mountain Island Lake — Paw Creek Access",
+      "city": "Charlotte",
+      "state": "NC",
+      "coordinates": { "lat": 35.3652, "lng": -80.9941 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": false,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bluegill", "Crappie"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "NC License Required"
+      },
+      "region": "Charlotte, NC",
+      "source": "static",
+      "notes": "Low-key bank access on Charlotte's drinking water reservoir. Catch and release only."
+    },
+
+    {
+      "id": "crowders-mountain-pond-001",
+      "name": "Crowders Mountain State Park — Boat Lake",
+      "city": "Charlotte",
+      "state": "NC",
+      "coordinates": { "lat": 35.2137, "lng": -81.2934 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bream", "Catfish"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "NC License Required"
+      },
+      "region": "Charlotte, NC",
+      "source": "static",
+      "notes": "Small calm lake at the base of Crowders Mountain. Great for young kids."
+    },
+
+    {
+      "id": "lake-wylie-001",
+      "name": "Lake Wylie — Ebenezer Park",
+      "city": "Charlotte",
+      "state": "NC",
+      "coordinates": { "lat": 35.1098, "lng": -81.0527 },
+      "accessibility": "Dock",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Largemouth Bass", "Crappie", "Bluegill", "Catfish"],
+      "fees": {
+        "parking": "$3/day",
+        "fishing": "NC or SC License Required"
+      },
+      "region": "Charlotte, NC",
+      "source": "static",
+      "notes": "Dock and beach access. Playground on site — great full-day family outing."
+    },
+
+    {
+      "id": "mcalpine-creek-001",
+      "name": "McAlpine Creek Greenway — Fishing Access",
+      "city": "Charlotte",
+      "state": "NC",
+      "coordinates": { "lat": 35.1341, "lng": -80.7528 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bream", "Catfish"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "NC License Required"
+      },
+      "region": "Charlotte, NC",
+      "source": "static",
+      "notes": "Urban greenway with creek fishing. Easy paved trail access."
+    },
+
+    {
+      "id": "lake-purdy-001",
+      "name": "Lake Purdy — Grants Mill Overlook",
+      "city": "Birmingham",
+      "state": "AL",
+      "coordinates": { "lat": 33.4512, "lng": -86.6723 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": false,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bluegill", "Crappie"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "AL License Required"
+      },
+      "region": "Birmingham, AL",
+      "source": "static",
+      "notes": "Quiet suburban reservoir with shaded bank access."
+    },
+
+    {
+      "id": "oak-mountain-double-oak-001",
+      "name": "Oak Mountain State Park — Double Oak Lake",
+      "city": "Birmingham",
+      "state": "AL",
+      "coordinates": { "lat": 33.3489, "lng": -86.7512 },
+      "accessibility": "Dock",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bluegill", "Catfish", "Bream"],
+      "fees": {
+        "parking": "$5/day",
+        "fishing": "AL License Required"
+      },
+      "region": "Birmingham, AL",
+      "source": "static",
+      "notes": "Excellent family park — beach, dock, and boat rentals available."
+    },
+
+    {
+      "id": "lake-guntersville-001",
+      "name": "Lake Guntersville State Park — Fishing Dock",
+      "city": "Birmingham",
+      "state": "AL",
+      "coordinates": { "lat": 34.3678, "lng": -86.2302 },
+      "accessibility": "Dock",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Largemouth Bass", "Crappie", "Bluegill", "Catfish"],
+      "fees": {
+        "parking": "$5/day",
+        "fishing": "AL License Required"
+      },
+      "region": "Birmingham, AL",
+      "source": "static",
+      "notes": "One of Alabama's best bass lakes. State park amenities are top notch for families."
+    },
+
+    {
+      "id": "veterans-park-pond-001",
+      "name": "Veterans Park — Fishing Pond",
+      "city": "Birmingham",
+      "state": "AL",
+      "coordinates": { "lat": 33.4348, "lng": -86.8022 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bluegill", "Bass", "Catfish"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "Free (city park)"
+      },
+      "region": "Birmingham, AL",
+      "source": "static",
+      "notes": "Free city park pond — no license required. Perfect first trip for young kids."
+    },
+
+    {
+      "id": "cahaba-river-001",
+      "name": "Cahaba River — Grants Mill Access",
+      "city": "Birmingham",
+      "state": "AL",
+      "coordinates": { "lat": 33.4621, "lng": -86.7145 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": false,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bream", "Catfish"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "AL License Required"
+      },
+      "region": "Birmingham, AL",
+      "source": "static",
+      "notes": "Clear-water river with wading access. Bring water shoes for the kids."
+    },
+
+    {
+      "id": "lettuce-lake-park-001",
+      "name": "Lettuce Lake Park — Boardwalk Fishing",
+      "city": "Tampa",
+      "state": "FL",
+      "coordinates": { "lat": 28.0709, "lng": -82.3897 },
+      "accessibility": "Dock",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bluegill", "Catfish", "Bream"],
+      "fees": {
+        "parking": "$2/vehicle",
+        "fishing": "FL License Required (16+)"
+      },
+      "region": "Tampa, FL",
+      "source": "static",
+      "notes": "Cypress swamp boardwalk — excellent wildlife viewing plus fishing. Kids love the gators!"
+    },
+
+    {
+      "id": "flatwoods-park-001",
+      "name": "Flatwoods Park — Fishing Pond",
+      "city": "Tampa",
+      "state": "FL",
+      "coordinates": { "lat": 28.1401, "lng": -82.3588 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bluegill", "Catfish"],
+      "fees": {
+        "parking": "$2/vehicle",
+        "fishing": "FL License Required (16+)"
+      },
+      "region": "Tampa, FL",
+      "source": "static",
+      "notes": "Peaceful flatwoods pond with a paved trail around it. Easy for strollers."
+    },
+
+    {
+      "id": "upper-tampa-bay-park-001",
+      "name": "Upper Tampa Bay Park — Fishing Pier",
+      "city": "Tampa",
+      "state": "FL",
+      "coordinates": { "lat": 27.9809, "lng": -82.6321 },
+      "accessibility": "Dock",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Snook", "Redfish", "Sheepshead", "Flounder"],
+      "fees": {
+        "parking": "$2/vehicle",
+        "fishing": "FL Saltwater License Required (16+)"
+      },
+      "region": "Tampa, FL",
+      "source": "static",
+      "notes": "Saltwater pier into Tampa Bay. Great variety and mangrove scenery."
+    },
+
+    {
+      "id": "lake-thonotosassa-001",
+      "name": "Lake Thonotosassa — Public Boat Ramp",
+      "city": "Tampa",
+      "state": "FL",
+      "coordinates": { "lat": 28.0543, "lng": -82.2901 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": false,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Largemouth Bass", "Bluegill", "Crappie", "Catfish"],
+      "fees": {
+        "parking": "Free",
+        "fishing": "FL License Required (16+)"
+      },
+      "region": "Tampa, FL",
+      "source": "static",
+      "notes": "Large freshwater lake with abundant bass. Calm mornings are best for kids."
+    },
+
+    {
+      "id": "hillsborough-river-state-park-001",
+      "name": "Hillsborough River State Park — Fishing Area",
+      "city": "Tampa",
+      "state": "FL",
+      "coordinates": { "lat": 28.1488, "lng": -82.2285 },
+      "accessibility": "Clear Bank",
+      "amenities": {
+        "restrooms": true,
+        "playground": true,
+        "picnicTables": true,
+        "shadedArea": true
+      },
+      "targetSpecies": ["Bass", "Bream", "Catfish"],
+      "fees": {
+        "parking": "$6/vehicle",
+        "fishing": "FL License Required (16+)"
+      },
+      "region": "Tampa, FL",
+      "source": "static",
+      "notes": "Historic Florida state park on the Hillsborough River. Canoe rentals available."
+    }
+
+  ]
+}

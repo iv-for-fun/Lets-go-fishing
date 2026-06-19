@@ -128,7 +128,6 @@ function toggleSave(locId, event) {
 }
 
 function refreshSaveButtonState(locId) {
-  // Update all bookmark buttons in the current DOM that match this id
   document.querySelectorAll(`[data-save-id="${locId}"]`).forEach(btn => {
     const saved = isSpotSaved(locId);
     btn.innerHTML = saved
@@ -456,7 +455,21 @@ function getCurrentMoonPhase() {
 }
 
 // ---------------------------------------------------------------------------
-// Card rendering — now with save bookmark button
+// Quick-glance tag helpers (PRD §3: "High Activity", "Restrooms", "Easy Casting")
+// ---------------------------------------------------------------------------
+function getQuickGlanceTags(loc) {
+  const tags = [];
+  if (loc.score >= 70)
+    tags.push(tagPill('🔥 High Activity', 'bg-green-100 text-green-700'));
+  if (loc.amenities && loc.amenities.restrooms)
+    tags.push(tagPill('🚻 Restrooms', 'bg-blue-100 text-blue-700'));
+  if (loc.accessibility === 'Dock' || loc.accessibility === 'Clear Bank')
+    tags.push(tagPill('🎣 Easy Casting', 'bg-orange-100 text-orange-700'));
+  return tags.join('');
+}
+
+// ---------------------------------------------------------------------------
+// Card rendering
 // ---------------------------------------------------------------------------
 function renderCards(results) {
   const container = document.getElementById('cardContainer');
@@ -469,6 +482,7 @@ function renderCards(results) {
     const bookmarkIcon = saved
       ? '<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 19V5z"/></svg>'
       : '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>';
+    const quickTags = getQuickGlanceTags(loc);
     return `
       <div class="bg-white rounded-xl shadow-sm border p-4 flex gap-3 items-center cursor-pointer active:scale-[0.98] transition-all" onclick="showDetailView('${loc.id}')">
         <div class="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center text-2xl flex-shrink-0">
@@ -485,10 +499,11 @@ function renderCards(results) {
             ${loc.weather && !loc.weather.usingFallback ? `<span>• ${Math.round(loc.weather.tempF)}°F</span>` : ''}
             ${loc.source === 'osm' ? '<span class="text-green-600">• Live</span>' : ''}
           </div>
-          <div class="flex gap-1 mt-1.5">
+          <div class="flex flex-wrap gap-1 mt-1.5">
             ${loc.targetSpecies.slice(0,2).map(s => tagPill(s)).join('')}
             ${loc.targetSpecies.length > 2 ? tagPill(`+${loc.targetSpecies.length - 2}`) : ''}
           </div>
+          ${quickTags ? `<div class="flex flex-wrap gap-1 mt-1">${quickTags}</div>` : ''}
         </div>
         <button data-save-id="${loc.id}" onclick="toggleSave('${loc.id}', event)"
           class="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center flex-shrink-0 ${saved ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-green-600'} transition-colors"

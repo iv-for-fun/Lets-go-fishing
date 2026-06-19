@@ -362,16 +362,16 @@ const GEAR_DB = {
     'Bream':           { rod: "5' ultralight spinning",             line: '4lb fluoro', rig: '1/32oz jig head',                  bait: 'small tube or cricket on a hook' },
     'Crappie':         { rod: "6' light spinning",                  line: '6lb fluoro', rig: '1/16oz marabou jig',               bait: 'crappie tube or small minnow' },
     'Catfish':         { rod: "6'6\" medium-heavy spinning",        line: '17lb mono',  rig: 'Slip sinker rig, #1 circle hook',  bait: 'stink bait or cut shad' },
-    'Bass':            { rod: "6' medium spinning",                 line: '10lb fluoro', rig: '3/16oz Texas-rig',                bait: '4" plastic worm or Senko' },
+    'Bass':            { rod: "6' medium spinning",                 line: '10lb fluoro', rig: '3/16oz Texas-rig',                bait: '4\" plastic worm or Senko' },
     'Largemouth Bass': { rod: "6'6\" medium baitcaster or spinning",line: '12lb fluoro', rig: '1/4oz jig or Texas-rig',          bait: 'creature bait or swim jig near cover' },
-    'Walleye':         { rod: "6' medium spinning",                 line: '8lb fluoro', rig: '1/4oz jig head',                   bait: '3" paddle tail swimbait or live crawler' },
-    'Northern Pike':   { rod: "6'6\" medium-heavy spinning",        line: '20lb braid + wire leader', rig: 'Inline spinner or swim bait', bait: '5" swimbait or large spoon' },
+    'Walleye':         { rod: "6' medium spinning",                 line: '8lb fluoro', rig: '1/4oz jig head',                   bait: '3\" paddle tail swimbait or live crawler' },
+    'Northern Pike':   { rod: "6'6\" medium-heavy spinning",        line: '20lb braid + wire leader', rig: 'Inline spinner or swim bait', bait: '5\" swimbait or large spoon' },
     'Perch':           { rod: "5' light spinning",                  line: '6lb mono',  rig: '1/16oz jig or drop shot',           bait: 'small minnow or perch eye' },
     'Striped Bass':    { rod: "7' medium-heavy spinning",           line: '20lb braid', rig: 'Bucktail jig or live-liner rig',   bait: 'live bunker or large swimshad' },
     'Snook':           { rod: "7' medium spinning",                 line: '20lb braid', rig: 'Weedless jig or live-liner',       bait: 'live pilchard or large swimbait' },
     'Redfish':         { rod: "7' medium-heavy spinning",           line: '20lb braid', rig: '1/4oz weedless gold spoon',        bait: 'live crab or cut mullet near grass' },
     'Sheepshead':      { rod: "6' medium spinning",                 line: '12lb fluoro', rig: 'Jig head 1/8oz or drop shot',     bait: 'fiddler crab tight to structure' },
-    'Flounder':        { rod: "6'6\" medium spinning",              line: '15lb braid', rig: '1/4oz jig or Carolina rig',        bait: 'live finger mullet or Gulp 4" shrimp' },
+    'Flounder':        { rod: "6'6\" medium spinning",              line: '15lb braid', rig: '1/4oz jig or Carolina rig',        bait: 'live finger mullet or Gulp 4\" shrimp' },
   }
 };
 
@@ -436,7 +436,13 @@ function getProTip(loc) {
 }
 
 // ---------------------------------------------------------------------------
-// Quick-glance tag helpers (PRD §3: "High Activity", "Restrooms", "Easy Casting")
+// Quick-glance tag helpers (PRD §3 — issue #5)
+// Tag logic (Option B — clean separation, no redundancy):
+//   🔥 High Activity  → score >= 70
+//   🚻 Restrooms      → amenities.restrooms === true
+//   🎣 Easy Casting   → accessibility === 'Clear Bank'
+//   🛥️ Dock Access    → accessibility === 'Dock'
+//   🛝 Playground     → amenities.playground === true
 // ---------------------------------------------------------------------------
 function getQuickGlanceTags(loc) {
   const tags = [];
@@ -444,8 +450,12 @@ function getQuickGlanceTags(loc) {
     tags.push(tagPill('🔥 High Activity', 'bg-green-100 text-green-700'));
   if (loc.amenities && loc.amenities.restrooms)
     tags.push(tagPill('🚻 Restrooms', 'bg-blue-100 text-blue-700'));
-  if (loc.accessibility === 'Dock' || loc.accessibility === 'Clear Bank')
+  if (loc.accessibility === 'Clear Bank')
     tags.push(tagPill('🎣 Easy Casting', 'bg-orange-100 text-orange-700'));
+  if (loc.accessibility === 'Dock')
+    tags.push(tagPill('🛥️ Dock Access', 'bg-teal-100 text-teal-700'));
+  if (loc.amenities && loc.amenities.playground)
+    tags.push(tagPill('🛝 Playground', 'bg-purple-100 text-purple-700'));
   return tags.join('');
 }
 

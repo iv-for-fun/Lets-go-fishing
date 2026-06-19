@@ -19,6 +19,27 @@ const CACHE_TTL = 21600; // 6 hours in seconds
 const ATLANTA_FALLBACK = { lat: 33.749, lng: -84.388 };
 const OVERPASS_RADIUS_M = 120000;
 
+// In-memory cache for the fallback spots JSON (loaded once at startup)
+let _fallbackSpotsCache = null;
+
+// ---------------------------------------------------------------------------
+// Fallback spots — loaded from data/locations.json (issue #8)
+// ---------------------------------------------------------------------------
+async function loadFallbackSpots() {
+  if (_fallbackSpotsCache !== null) return _fallbackSpotsCache;
+  try {
+    const res = await fetch('./data/locations.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    _fallbackSpotsCache = Array.isArray(json.spots) ? json.spots : [];
+    console.log(`[loadFallbackSpots] loaded ${_fallbackSpotsCache.length} curated spots`);
+  } catch (err) {
+    console.warn('[loadFallbackSpots] failed to load data/locations.json:', err.message);
+    _fallbackSpotsCache = [];
+  }
+  return _fallbackSpotsCache;
+}
+
 // ---------------------------------------------------------------------------
 // Location helpers
 // ---------------------------------------------------------------------------
@@ -330,6 +351,10 @@ const GEAR_DB = {
     'Northern Pike':   { rod: '5ft medium-heavy spin-cast',          line: '14lb mono', rig: 'Wire leader, #2 treble hook',       bait: 'large shiner or flashy spoon' },
     'Perch':           { rod: '4ft light spin-cast',                 line: '6lb mono',  rig: 'Small bobber, #8 hook',             bait: 'small minnow or waxworm' },
     'Striped Bass':    { rod: '5ft medium spin-cast',                line: '12lb mono', rig: 'Float rig, #2 hook',                bait: 'live shad or cut bait' },
+    'Snook':           { rod: '5ft medium spin-cast',                line: '12lb mono', rig: 'Float rig, #1/0 hook',              bait: 'live shrimp or pilchard' },
+    'Redfish':         { rod: '5ft medium spin-cast',                line: '15lb mono', rig: 'Carolina rig, #2/0 circle hook',    bait: 'cut mullet or live shrimp' },
+    'Sheepshead':      { rod: '4ft light spin-cast',                 line: '8lb mono',  rig: 'Popping cork, #2 hook',             bait: 'fiddler crab or barnacles' },
+    'Flounder':        { rod: '5ft medium spin-cast',                line: '10lb mono', rig: 'Jig head, 1/4oz',                   bait: 'live minnow or gulp shrimp' },
   },
   pro: {
     default:           { rod: "5'6\" medium-light spinning combo",  line: '8lb mono',   rig: '1/8oz rooster tail or Senko worm', bait: 'soft plastic worms near structure' },
@@ -343,6 +368,10 @@ const GEAR_DB = {
     'Northern Pike':   { rod: "6'6\" medium-heavy spinning",        line: '20lb braid + wire leader', rig: 'Inline spinner or swim bait', bait: '5" swimbait or large spoon' },
     'Perch':           { rod: "5' light spinning",                  line: '6lb mono',  rig: '1/16oz jig or drop shot',           bait: 'small minnow or perch eye' },
     'Striped Bass':    { rod: "7' medium-heavy spinning",           line: '20lb braid', rig: 'Bucktail jig or live-liner rig',   bait: 'live bunker or large swimshad' },
+    'Snook':           { rod: "7' medium spinning",                 line: '20lb braid', rig: 'Weedless jig or live-liner',       bait: 'live pilchard or large swimbait' },
+    'Redfish':         { rod: "7' medium-heavy spinning",           line: '20lb braid', rig: '1/4oz weedless gold spoon',        bait: 'live crab or cut mullet near grass' },
+    'Sheepshead':      { rod: "6' medium spinning",                 line: '12lb fluoro', rig: 'Jig head 1/8oz or drop shot',     bait: 'fiddler crab tight to structure' },
+    'Flounder':        { rod: "6'6\" medium spinning",              line: '15lb braid', rig: '1/4oz jig or Carolina rig',        bait: 'live finger mullet or Gulp 4" shrimp' },
   }
 };
 
@@ -396,62 +425,14 @@ function getProTip(loc) {
     'Northern Pike':   `Pike are aggressive — cast a flashy spoon or large swimbait and retrieve quickly. Watch for follows!`,
     'Perch':           `School perch together — once you catch one, drop back to the same spot. They travel in groups.`,
     'Striped Bass':    `Look for birds working the water surface — they follow the same baitfish Stripers are chasing below.`,
+    'Snook':           `Snook hide in mangrove shadows. Cast parallel to the shoreline and work the bait back slowly.`,
+    'Redfish':         `Look for tailing Redfish in the shallows at low tide. Cast ahead of them and let the bait sit.`,
+    'Sheepshead':      `Sheepshead are bait stealers — use the lightest weight possible and set the hook fast.`,
+    'Flounder':        `Flounder lie flat on the bottom. Drag a jig slowly across sandy patches near structure.`,
   };
   return tips[species] || (isDock
     ? `The dock pilings are usually stacked with panfish around 10am. Perfect while you set up lunch!`
     : `The shady bank edges hold the most fish in the morning. Work slowly and let the bait settle.`);
-}
-
-// ---------------------------------------------------------------------------
-// Static fallback spots
-// ---------------------------------------------------------------------------
-const STATIC_FALLBACK_SPOTS = [
-  { id: 'lake-allatoona-001', name: 'Lake Allatoona — McKaskey Creek', coordinates: { lat: 34.1473, lng: -84.7229 }, accessibility: 'Dock', amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true }, targetSpecies: ['Largemouth Bass', 'Crappie', 'Bluegill'], fees: { parking: '$5/day', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' },
-  { id: 'stone-mountain-lake-001', name: 'Stone Mountain Park — Fishing Area', coordinates: { lat: 33.8081, lng: -84.1452 }, accessibility: 'Clear Bank', amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true }, targetSpecies: ['Bass', 'Bluegill', 'Catfish'], fees: { parking: '$20/vehicle', fishing: 'Free with park entry' }, region: 'Atlanta, GA', source: 'static' },
-  { id: 'sweetwater-creek-001', name: 'Sweetwater Creek State Park', coordinates: { lat: 33.7490, lng: -84.6271 }, accessibility: 'Clear Bank', amenities: { restrooms: true, playground: false, picnicTables: true, shadedArea: true }, targetSpecies: ['Bass', 'Bream', 'Catfish'], fees: { parking: '$5/day', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' },
-  { id: 'lake-lanier-001', name: 'Lake Lanier — Sawnee Campground Dock', coordinates: { lat: 34.1732, lng: -84.0168 }, accessibility: 'Dock', amenities: { restrooms: true, playground: false, picnicTables: true, shadedArea: true }, targetSpecies: ['Striped Bass', 'Largemouth Bass', 'Crappie'], fees: { parking: '$5/day', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' },
-  { id: 'kennesaw-mountain-pond-001', name: 'Kennesaw Mountain — Visitors Pond', coordinates: { lat: 33.9748, lng: -84.5766 }, accessibility: 'Clear Bank', amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true }, targetSpecies: ['Bluegill', 'Bass', 'Catfish'], fees: { parking: 'Free', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' }
-];
-
-// ---------------------------------------------------------------------------
-// UI helpers
-// ---------------------------------------------------------------------------
-function showLoading(show) {
-  const el = document.getElementById('loadingState');
-  if (el) el.style.display = show ? 'block' : 'none';
-}
-
-function showError(msg) {
-  document.getElementById('cardContainer').innerHTML = `
-    <div class="text-center mt-8 p-4">
-      <p class="text-red-500 font-semibold">⚠️ Something went wrong</p>
-      <p class="text-gray-500 text-sm mt-1">${msg}</p>
-      <button onclick="init()" class="mt-3 bg-green-700 text-white px-4 py-2 rounded text-sm">Try Again</button>
-    </div>`;
-}
-
-function showGpsBanner(show) { const el = document.getElementById('gpsBanner'); if (el) el.style.display = show ? 'block' : 'none'; }
-function showWeatherBanner(show) { const el = document.getElementById('weatherBanner'); if (el) el.style.display = show ? 'block' : 'none'; }
-
-function showLocationBanner(displayName, usingGps) {
-  let el = document.getElementById('locationResolutionBanner');
-  if (!el) { el = document.createElement('div'); el.id = 'locationResolutionBanner'; document.querySelector('header').after(el); }
-  el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-indigo-50 border-indigo-200 text-indigo-800';
-  el.textContent = usingGps ? `📍 Using your current GPS location.` : `📍 Showing spots near: ${displayName}`;
-  el.style.display = 'block';
-}
-
-function showDataSourceBanner(source) {
-  let el = document.getElementById('dataSourceBanner');
-  if (!el) { el = document.createElement('div'); el.id = 'dataSourceBanner'; (document.getElementById('locationResolutionBanner') || document.querySelector('header')).after(el); }
-  if (source === 'osm') { el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-green-50 border-green-200 text-green-800'; el.textContent = '🗺️ Showing live fishing spots near your location from OpenStreetMap.'; }
-  else { el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-yellow-50 border-yellow-200 text-yellow-800'; el.textContent = '📋 Showing curated Atlanta-area spots — live data unavailable for this location.'; }
-  el.style.display = 'block';
-}
-
-function getCurrentMoonPhase() {
-  const refNew = new Date('2000-01-06T18:14:00Z');
-  return ((Date.now() - refNew) / (1000 * 60 * 60 * 24) % 29.53) / 29.53;
 }
 
 // ---------------------------------------------------------------------------
@@ -662,7 +643,12 @@ async function init() {
   const moonPhase = getCurrentMoonPhase();
   let locations   = await fetchFishingSpotsNearby(userCoords.lat, userCoords.lng, true);
   const usingLive = locations.length > 0;
-  if (!usingLive) locations = STATIC_FALLBACK_SPOTS;
+
+  if (!usingLive) {
+    // Load curated spots from data/locations.json (issue #8)
+    locations = await loadFallbackSpots();
+  }
+
   showDataSourceBanner(usingLive ? 'osm' : 'static');
 
   const childAge      = parseInt(document.getElementById('childAge').value)  || 6;

@@ -278,23 +278,99 @@
       return '🌘';
     }
 
-    // ---------- Forecast (moon-only for now; upgraded in step 5) ----------
+    // ---------- Pressure trend helpers ----------
+    // Reads the stored trend from scorer.js's localStorage key (pt_lat_lng)
+    // Returns 'rising' | 'falling' | 'stable'
+    function getStoredTrend(loc) {
+      if (typeof getTrend === 'function' && loc && loc.coordinates) {
+        try {
+          const key = `pt_${loc.coordinates.lat.toFixed(3)}_${loc.coordinates.lng.toFixed(3)}`;
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const readings = JSON.parse(raw);
+            return getTrend(readings);
+          }
+        } catch { /* fall through to stable */ }
+      }
+      return 'stable';
+    }
+
+    // Modifier applied to moon score for pressure-blended days.
+    // Rising pressure = fish are feeding; falling = activity drops.
+    function trendModifier(trend) {
+      if (trend === 'rising')  return 15;
+      if (trend === 'falling') return -20;
+      return 0; // stable
+    }
+
+    // Human-readable label and emoji for the current trend
+    function trendLabel(trend) {
+      if (trend === 'rising')  return '↗️ Rising';
+      if (trend === 'falling') return '↘️ Falling';
+      return '↔️ Stable';
+    }
+
+    // ---------- Forecast: blended pressure + moon for days 1-5, moon-only beyond ----------
     function renderForecast(loc) {
       const grid = document.getElementById('forecastGrid');
       if (!grid) return;
       grid.innerHTML = '';
-      const today = new Date();
+
+      const trend    = getStoredTrend(loc);
+      const modifier = trendModifier(trend);
+      const today    = new Date();
+      const PRESSURE_WINDOW = 5; // days that get pressure-blended score
+
       for (let i = 0; i < 30; i++) {
         const date = new Date(today);
         date.setDate(today.getDate() + i);
-        const phase = getMoonPhase(date);
+
+        const phase     = getMoonPhase(date);
         const moonScore = 100 - (Math.abs((phase % 0.5) - 0.25) / 0.25 * 50);
-        const color = moonScore > 80 ? 'bg-green-400' : moonScore > 60 ? 'bg-yellow-300' : 'bg-red-400';
+        const useBlend  = i < PRESSURE_WINDOW;
+
+        // Blended score: 70% moon + 30% pressure modifier (clamped 0–100)
+        const blendedScore = useBlend
+          ? Math.min(100, Math.max(0, moonScore * 0.7 + (50 + modifier) * 0.3))
+          : moonScore;
+
+        const color = blendedScore >= 70 ? 'bg-green-400'
+                    : blendedScore >= 45 ? 'bg-yellow-300'
+                    : 'bg-red-400';
+
+        // Ring on blended days so users can see where pressure data ends
+        const ringClass = useBlend ? 'ring-2 ring-offset-1 ring-blue-400' : '';
+
         const dayEl = document.createElement('div');
-        dayEl.className = `h-8 flex flex-col items-center justify-center rounded-md text-[10px] font-bold ${color} border border-white/20`;
+        dayEl.className = `h-8 flex flex-col items-center justify-center rounded-md text-[10px] font-bold ${color} ${ringClass} border border-white/20 cursor-default`;
         dayEl.innerHTML = `<span>${date.getDate()}</span>`;
-        dayEl.title = `${date.toLocaleDateString()} · Moon: ${Math.round(phase*100)}% · Score: ${Math.round(moonScore)}`;
+
+        // Rich tooltip: show both inputs for blended days, moon-only for the rest
+        const moonPct   = Math.round(phase * 100);
+        const moonEmoji = getMoonIcon(phase);
+        const scoreText = Math.round(blendedScore);
+        dayEl.title = useBlend
+          ? `${date.toLocaleDateString()} · ${moonEmoji} Moon ${moonPct}% · Pressure ${trendLabel(trend)} · Score: ${scoreText}`
+          : `${date.toLocaleDateString()} · ${moonEmoji} Moon ${moonPct}% · Score: ${scoreText}`;
+
         grid.appendChild(dayEl);
+      }
+
+      // Inject trend badge + legend below the grid (replace existing legend)
+      const legendEl = document.getElementById('forecastLegend');
+      if (legendEl) {
+        legendEl.innerHTML = `
+          <div class="flex items-center justify-center gap-1 mb-3">
+            <span class="text-[10px] font-bold text-gray-500">Current pressure:</span>
+            <span class="text-[10px] font-black text-blue-700">${trendLabel(trend)}</span>
+            <span class="inline-block w-2 h-2 rounded-full bg-blue-400 ring-2 ring-blue-400 ring-offset-1 ml-1"></span>
+            <span class="text-[10px] text-gray-400">= blended (days 1–5)</span>
+          </div>
+          <div class="flex gap-4 justify-center">
+            <div class="flex items-center gap-1 text-[10px] font-bold"><div class="w-2 h-2 rounded bg-green-400"></div> Excellent</div>
+            <div class="flex items-center gap-1 text-[10px] font-bold"><div class="w-2 h-2 rounded bg-yellow-300"></div> Good</div>
+            <div class="flex items-center gap-1 text-[10px] font-bold"><div class="w-2 h-2 rounded bg-red-400"></div> Poor</div>
+          </div>`;
       }
     }
 

@@ -677,8 +677,14 @@ async function init() {
 
   allResults = candidates.map((loc, i) => {
     const spotWeather = spotWeathers[i] || originWeather;
-    const score = calcSuccessScore(loc, spotWeather, moonPhase, childAge);
-    return { ...loc, weather: spotWeather, score };
+    // Record this pressure reading and read back the rolling trend (last 3
+    // readings per spot in localStorage) so the trend actually contributes to
+    // the score instead of defaulting to 'stable'.
+    const pKey = coordKey(loc.coordinates.lat, loc.coordinates.lng);
+    if (spotWeather && typeof spotWeather.pressureHpa === 'number') recordPressure(pKey, spotWeather.pressureHpa);
+    const pressureTrend = getTrend(pKey);
+    const score = calcSuccessScore(loc, spotWeather, moonPhase, childAge, pressureTrend);
+    return { ...loc, weather: spotWeather, score, pressureTrend };
   });
 
   showLoading(false);

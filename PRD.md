@@ -1,8 +1,10 @@
 # Product Requirements Document (PRD)
 ## Lets-Go-Fishing — Kid-Friendly Fishing Spot Finder
-**Version:** 1.3 | **Updated:** June 21, 2026 | **Owner:** iv-for-fun
+**Version:** 1.4 | **Updated:** July 8, 2026 | **Owner:** iv-for-fun
 
-> **v1.3 Change Log:** Added AI Research Agent (§4.6). New data sources: Georgia DNR public access points (`enrichFromDNR`), iNaturalist community fish sightings (`enrichSpotWithINat`), and optional OpenAI/Gemini LLM summarization. Extended data model (§8) with `dnr` sub-object. Updated API config (§11) with `OPENAI_API_KEY`. Updated file structure (§12) with `enrichment.js`. Backlog updated (§14).
+> **v1.4 Change Log:** Corrected doc-vs-code drift. The **AI Research Agent (§4.6) was never actually implemented** — `enrichment.js` was never committed and the wiring shipped in v1.3 broke the live site; it has been reverted and moved back to the backlog (tracking: issue #33). **Static fallback spots removed** — when the live Overpass query returns nothing, the app now shows a "couldn't find any fishing spots" message instead of substituting curated Atlanta spots (`data/locations.json` remains in the repo but is no longer a runtime fallback). **Pressure trend is now wired into the score** (previously computed but never applied). Child age range confirmed 1–15 in `index.html`.
+
+> **v1.3 Change Log:** Added AI Research Agent (§4.6). New data sources: Georgia DNR public access points (`enrichFromDNR`), iNaturalist community fish sightings (`enrichSpotWithINat`), and optional OpenAI/Gemini LLM summarization. Extended data model (§8) with `dnr` sub-object. Updated API config (§11) with `OPENAI_API_KEY`. Updated file structure (§12) with `enrichment.js`. Backlog updated (§14). *(⚠️ Superseded by v1.4 — this work was reverted; see above.)*
 
 > **v1.2 Change Log:** Fine-grained sync pass against live code. Corrected child age range (1–15 per `index.html`), kid-factor Dock bonus details (base +6, age<6 bonus +10, cap 25pts), pressure buffer size (last 3 readings), gear guide age labels (Beginner 3–7 / Junior Pro 8+), card tag definitions (Easy Casting = Clear Bank only; Dock Access = Dock only), pro-tip logic sourced from `getProTip()`, OSM fallback clarified as `data/locations.json` via `loadFallbackSpots()`, and Quick-Glance Tags marked shipped in backlog.
 
@@ -48,8 +50,8 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 | Location | Browser Geolocation API + Nominatim (OSM) geocoding fallback | Replaces Google Places Autocomplete |
 | Maps | Leaflet.js + OpenStreetMap tiles | Replaces MapBox API |
 | Distance | Haversine formula ÷ avg 45 mph estimate | Replaces Distance Matrix API |
-| Spot Data | Overpass API (OpenStreetMap) — live fetch; fallback to `data/locations.json` via `loadFallbackSpots()` | 5 curated Atlanta spots if OSM unavailable |
-| Spot Enrichment | Georgia DNR JSON + iNaturalist API + optional LLM | See §4.6 |
+| Spot Data | Overpass API (OpenStreetMap) — live fetch only | Shows a "couldn't find any fishing spots" message when the query returns nothing (no static fallback as of v1.4) |
+| Spot Enrichment | *(Not implemented — reverted; see §4.6 / issue #33)* | — |
 | Weather | OpenWeatherMap API (key in `config.js`) | Graceful mock fallback if no key |
 | Moon Phase | Client-side math (no API call) | Epoch-based calculation |
 | Pressure Trend | `localStorage` rolling 3-reading store | Computed in `scorer.js` via `getTrend()` |
@@ -106,9 +108,11 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 - Bookmark icon on any card saves the location to `localStorage`.
 - Dedicated **Saved** tab in bottom nav lists all bookmarked spots; tap to open detail view.
 
-### 4.6 AI Research Agent (Spot Enrichment) ✅ Shipped v1.3
+### 4.6 AI Research Agent (Spot Enrichment) 🔲 Backlog — NOT shipped (reverted)
 
-When a user opens a spot's detail view, a lightweight client-side research pipeline runs asynchronously to enrich the spot's data with real-world information. All logic lives in `enrichment.js`.
+> **Status (v1.4):** This section describes intended, not shipped, behavior. The v1.3 attempt was never functional — `enrichment.js` was never committed and the call sites broke the live site, so the work was reverted. Rebuild is tracked in **issue #33**. The design below is retained as the target spec.
+
+When a user opens a spot's detail view, a lightweight client-side research pipeline runs asynchronously to enrich the spot's data with real-world information. All logic would live in `enrichment.js`.
 
 #### Pipeline Overview
 
@@ -296,14 +300,14 @@ const CONFIG = {
 
 ```
 lets-go-fishing/
-├── index.html          ← SPA shell, nav, views, forecast/map logic
-├── enrichment.js       ← AI Research Agent: DNR enrichment, iNat sightings, LLM summaries
+├── index.html          ← SPA shell, nav, views, forecast/map logic + inline UI script
 ├── app.js              ← search, location resolution, scoring pipeline, cache, UI rendering
 ├── scorer.js           ← Success Score algorithm, moon phase, pressure trend
-├── config.js           ← API keys (gitignored)
+├── config.js           ← API keys (OpenWeatherMap); committed so the client-side build works
 ├── config.example.js   ← Template (committed)
 ├── data/
-│   └── locations.json  ← Curated fallback spots (5 Atlanta-area locations)
+│   └── locations.json  ← Curated spot dataset (not currently used as a runtime fallback)
+│                          (enrichment.js — AI Research Agent — is NOT present; see §4.6 / issue #33)
 └── .github/
     └── workflows/      ← GitHub Pages deployment
 ```
@@ -335,11 +339,11 @@ lets-go-fishing/
 | 5 | Quick-glance tags | ✅ Shipped | |
 | 6 | 30-day forecast calendar | ✅ Shipped | |
 | 7 | Gear guide (14 species) | ✅ Shipped | |
-| 8 | Fallback curated spots JSON | ✅ Shipped | |
+| 8 | Fallback curated spots JSON | ❌ Removed (v1.4) | Live-only now; shows "couldn't find any fishing spots" when Overpass returns nothing |
 | 9 | Saved spots (localStorage) | ✅ Shipped | |
 | 10 | Leaflet map view | ✅ Shipped | |
 | 11 | Nominatim geocoding | ✅ Shipped | |
-| 12 | AI Research Agent (DNR + iNat + LLM) | ✅ Shipped v1.3 | `enrichment.js` |
+| 12 | AI Research Agent (DNR + iNat + LLM) | 🔲 Backlog (reverted) | v1.3 attempt never worked (`enrichment.js` never committed); rebuild tracked in issue #33 |
 | 13 | GA DNR confirmed species data file | 🔲 Backlog | Populate `data/dnr-access-points.json` with real GA DNR records |
 | 14 | PWA / offline support | 🔲 Backlog | Service worker + manifest |
 | 15 | User-submitted fish reports | 🔲 Backlog | Requires backend |

@@ -10,7 +10,7 @@ A mobile-first web app that helps parents find the **best kid-friendly fishing s
 
 - 📍 **Auto-Location** — Uses the browser Geolocation API to find spots near you, with a manual address fallback
 - 🚗 **Drive Time Filter** — Filter spots from 30 minutes to 4 hours away (30-min increments)
-- 👦 **Child Age Input** — Ages 1–12; kids under 6 are automatically routed to dock or clear-bank locations
+- 👦 **Child Age Input** — Ages 1–15; kids under 6 are automatically routed to dock or clear-bank locations
 - 🏆 **Success Score Algorithm** — Each spot is ranked by:
   - Catch Probability (weather temp, barometric pressure, lunar phase)
   - Kid-Factor bonus (restrooms, playgrounds, dock access)
@@ -31,11 +31,11 @@ A mobile-first web app that helps parents find the **best kid-friendly fishing s
 | UI Framework | HTML5 + Tailwind CSS (mobile-first, CDN) |
 | Logic | Vanilla JavaScript (ES6+) |
 | Hosting | GitHub Pages (client-side only) |
-| Location | Browser Geolocation API (no key required) |
+| Location | Browser Geolocation API + Nominatim (OSM) geocoding fallback |
 | Drive Time | Haversine formula (client-side, no key required) |
-| Weather & Pressure | [Open-Meteo API](https://open-meteo.com/) (free, no token) |
+| Weather & Pressure | [OpenWeatherMap API](https://openweathermap.org/api) (key in `config.js`; graceful mock fallback if absent) |
 | Moon Phases | Computed client-side (astronomical formula) |
-| Fishing Spots | Curated regional JSON dataset (bundled, no API key) |
+| Fishing Spots | Overpass API (OpenStreetMap) live query; shows a "couldn't find any fishing spots" message when none are returned |
 | Caching | `localStorage` (6-hour TTL) |
 
 ---
@@ -70,29 +70,20 @@ Push to the `main` branch. GitHub Pages serves directly from the repo root — n
 ```
 Lets-go-fishing/
 │
-├── index.html              # SPA entry point — app shell & layout
-│
-├── assets/
-│   ├── css/
-│   │   └── styles.css      # Custom styles & Tailwind overrides
-│   ├── js/
-│   │   ├── app.js          # App bootstrap, routing, view rendering
-│   │   ├── location.js     # Geolocation API + address fallback
-│   │   ├── scoring.js      # Success Score algorithm
-│   │   ├── weather.js      # Open-Meteo API integration
-│   │   ├── lunar.js        # Moon phase calculation (client-side)
-│   │   ├── forecast.js     # 30-day calendar logic
-│   │   ├── cache.js        # localStorage cache layer (6-hr TTL)
-│   │   └── utils.js        # Haversine formula, helpers, formatters
-│   └── icons/
-│       └── favicon.ico
+├── index.html            # SPA shell, nav, views, map/forecast logic + inline UI script
+├── app.js                # Search, location resolution, scoring pipeline, cache, card/detail rendering
+├── scorer.js             # Success Score algorithm, moon phase, pressure trend
+├── config.js             # API keys (OpenWeatherMap); committed for the client-side build
+├── config.example.js     # Config template
 │
 ├── data/
-│   └── spots.json          # Curated regional fishing spot dataset
+│   └── locations.json    # Curated spot dataset (not currently used as a runtime fallback)
 │
-├── docs/
-│   └── BACKLOG.md          # Feature backlog & design notes
+├── .github/
+│   └── workflows/        # GitHub Pages deployment + data-generation workflow
 │
+├── PRD.md                # Product requirements
+├── CLAUDE.md             # Project context for Claude Code (imports PRD.md)
 └── README.md
 ```
 
@@ -103,14 +94,19 @@ Lets-go-fishing/
 Each fishing spot receives a **0–100 score** calculated as:
 
 ```
-Success Score = (Catch Probability × 0.5) + (Kid Factor × 0.3) + (Accessibility × 0.2)
+Success Score = (Catch Probability × 0.35) + (Pressure Trend × 0.10)
+              + (Lunar Phase × 0.20) + (Kid Factor × 0.20) + (Accessibility × 0.15)
 ```
 
-| Component | Factors |
-|---|---|
-| **Catch Probability** | Air temp, barometric pressure trend, lunar phase |
-| **Kid Factor** | +points for restrooms, playground, dock access |
-| **Accessibility** | Clear bank = high; obstructed bank = low; dock = high |
+| Component | Weight | Factors |
+|---|---|---|
+| **Catch Probability** | 35% | Air temp + barometric pressure level (OpenWeatherMap / mock) |
+| **Lunar Phase** | 20% | Client-side moon-phase activity multiplier |
+| **Kid Factor** | 20% | +points for restrooms, playground, shade, dock access (cap 25) |
+| **Accessibility** | 15% | Dock > Clear Bank > Obstructed Bank |
+| **Pressure Trend** | 10% | Rising / falling / stable from a rolling 3-reading store |
+
+See `scorer.js` for the exact `WEIGHTS` and component functions.
 
 ---
 

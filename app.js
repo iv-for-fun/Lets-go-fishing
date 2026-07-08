@@ -19,27 +19,6 @@ const CACHE_TTL = 21600; // 6 hours in seconds
 const ATLANTA_FALLBACK = { lat: 33.749, lng: -84.388 };
 const OVERPASS_RADIUS_M = 120000;
 
-// In-memory cache for the fallback spots JSON (loaded once at startup)
-let _fallbackSpotsCache = null;
-
-// ---------------------------------------------------------------------------
-// Fallback spots — loaded from data/locations.json (issue #8)
-// ---------------------------------------------------------------------------
-async function loadFallbackSpots() {
-  if (_fallbackSpotsCache !== null) return _fallbackSpotsCache;
-  try {
-    const res = await fetch('./data/locations.json');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    _fallbackSpotsCache = Array.isArray(json.spots) ? json.spots : [];
-    console.log(`[loadFallbackSpots] loaded ${_fallbackSpotsCache.length} curated spots`);
-  } catch (err) {
-    console.warn('[loadFallbackSpots] failed to load data/locations.json:', err.message);
-    _fallbackSpotsCache = [];
-  }
-  return _fallbackSpotsCache;
-}
-
 // ---------------------------------------------------------------------------
 // Location helpers
 // ---------------------------------------------------------------------------
@@ -351,10 +330,6 @@ const GEAR_DB = {
     'Northern Pike':   { rod: '5ft medium-heavy spin-cast',          line: '14lb mono', rig: 'Wire leader, #2 treble hook',       bait: 'large shiner or flashy spoon' },
     'Perch':           { rod: '4ft light spin-cast',                 line: '6lb mono',  rig: 'Small bobber, #8 hook',             bait: 'small minnow or waxworm' },
     'Striped Bass':    { rod: '5ft medium spin-cast',                line: '12lb mono', rig: 'Float rig, #2 hook',                bait: 'live shad or cut bait' },
-    'Snook':           { rod: '5ft medium spin-cast',                line: '12lb mono', rig: 'Float rig, #1/0 hook',              bait: 'live shrimp or pilchard' },
-    'Redfish':         { rod: '5ft medium spin-cast',                line: '15lb mono', rig: 'Carolina rig, #2/0 circle hook',    bait: 'cut mullet or live shrimp' },
-    'Sheepshead':      { rod: '4ft light spin-cast',                 line: '8lb mono',  rig: 'Popping cork, #2 hook',             bait: 'fiddler crab or barnacles' },
-    'Flounder':        { rod: '5ft medium spin-cast',                line: '10lb mono', rig: 'Jig head, 1/4oz',                   bait: 'live minnow or gulp shrimp' },
   },
   pro: {
     default:           { rod: "5'6\" medium-light spinning combo",  line: '8lb mono',   rig: '1/8oz rooster tail or Senko worm', bait: 'soft plastic worms near structure' },
@@ -362,16 +337,12 @@ const GEAR_DB = {
     'Bream':           { rod: "5' ultralight spinning",             line: '4lb fluoro', rig: '1/32oz jig head',                  bait: 'small tube or cricket on a hook' },
     'Crappie':         { rod: "6' light spinning",                  line: '6lb fluoro', rig: '1/16oz marabou jig',               bait: 'crappie tube or small minnow' },
     'Catfish':         { rod: "6'6\" medium-heavy spinning",        line: '17lb mono',  rig: 'Slip sinker rig, #1 circle hook',  bait: 'stink bait or cut shad' },
-    'Bass':            { rod: "6' medium spinning",                 line: '10lb fluoro', rig: '3/16oz Texas-rig',                bait: '4\" plastic worm or Senko' },
+    'Bass':            { rod: "6' medium spinning",                 line: '10lb fluoro', rig: '3/16oz Texas-rig',                bait: '4" plastic worm or Senko' },
     'Largemouth Bass': { rod: "6'6\" medium baitcaster or spinning",line: '12lb fluoro', rig: '1/4oz jig or Texas-rig',          bait: 'creature bait or swim jig near cover' },
-    'Walleye':         { rod: "6' medium spinning",                 line: '8lb fluoro', rig: '1/4oz jig head',                   bait: '3\" paddle tail swimbait or live crawler' },
-    'Northern Pike':   { rod: "6'6\" medium-heavy spinning",        line: '20lb braid + wire leader', rig: 'Inline spinner or swim bait', bait: '5\" swimbait or large spoon' },
+    'Walleye':         { rod: "6' medium spinning",                 line: '8lb fluoro', rig: '1/4oz jig head',                   bait: '3" paddle tail swimbait or live crawler' },
+    'Northern Pike':   { rod: "6'6\" medium-heavy spinning",        line: '20lb braid + wire leader', rig: 'Inline spinner or swim bait', bait: '5" swimbait or large spoon' },
     'Perch':           { rod: "5' light spinning",                  line: '6lb mono',  rig: '1/16oz jig or drop shot',           bait: 'small minnow or perch eye' },
     'Striped Bass':    { rod: "7' medium-heavy spinning",           line: '20lb braid', rig: 'Bucktail jig or live-liner rig',   bait: 'live bunker or large swimshad' },
-    'Snook':           { rod: "7' medium spinning",                 line: '20lb braid', rig: 'Weedless jig or live-liner',       bait: 'live pilchard or large swimbait' },
-    'Redfish':         { rod: "7' medium-heavy spinning",           line: '20lb braid', rig: '1/4oz weedless gold spoon',        bait: 'live crab or cut mullet near grass' },
-    'Sheepshead':      { rod: "6' medium spinning",                 line: '12lb fluoro', rig: 'Jig head 1/8oz or drop shot',     bait: 'fiddler crab tight to structure' },
-    'Flounder':        { rod: "6'6\" medium spinning",              line: '15lb braid', rig: '1/4oz jig or Carolina rig',        bait: 'live finger mullet or Gulp 4\" shrimp' },
   }
 };
 
@@ -425,10 +396,6 @@ function getProTip(loc) {
     'Northern Pike':   `Pike are aggressive — cast a flashy spoon or large swimbait and retrieve quickly. Watch for follows!`,
     'Perch':           `School perch together — once you catch one, drop back to the same spot. They travel in groups.`,
     'Striped Bass':    `Look for birds working the water surface — they follow the same baitfish Stripers are chasing below.`,
-    'Snook':           `Snook hide in mangrove shadows. Cast parallel to the shoreline and work the bait back slowly.`,
-    'Redfish':         `Look for tailing Redfish in the shallows at low tide. Cast ahead of them and let the bait sit.`,
-    'Sheepshead':      `Sheepshead are bait stealers — use the lightest weight possible and set the hook fast.`,
-    'Flounder':        `Flounder lie flat on the bottom. Drag a jig slowly across sandy patches near structure.`,
   };
   return tips[species] || (isDock
     ? `The dock pilings are usually stacked with panfish around 10am. Perfect while you set up lunch!`
@@ -436,13 +403,59 @@ function getProTip(loc) {
 }
 
 // ---------------------------------------------------------------------------
-// Quick-glance tag helpers (PRD §3 — issue #5)
-// Tag logic (Option B — clean separation, no redundancy):
-//   🔥 High Activity  → score >= 70
-//   🚻 Restrooms      → amenities.restrooms === true
-//   🎣 Easy Casting   → accessibility === 'Clear Bank'
-//   🛥️ Dock Access    → accessibility === 'Dock'
-//   🛝 Playground     → amenities.playground === true
+// Static fallback spots
+// ---------------------------------------------------------------------------
+const STATIC_FALLBACK_SPOTS = [
+  { id: 'lake-allatoona-001', name: 'Lake Allatoona — McKaskey Creek', coordinates: { lat: 34.1473, lng: -84.7229 }, accessibility: 'Dock', amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true }, targetSpecies: ['Largemouth Bass', 'Crappie', 'Bluegill'], fees: { parking: '$5/day', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' },
+  { id: 'stone-mountain-lake-001', name: 'Stone Mountain Park — Fishing Area', coordinates: { lat: 33.8081, lng: -84.1452 }, accessibility: 'Clear Bank', amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true }, targetSpecies: ['Bass', 'Bluegill', 'Catfish'], fees: { parking: '$20/vehicle', fishing: 'Free with park entry' }, region: 'Atlanta, GA', source: 'static' },
+  { id: 'sweetwater-creek-001', name: 'Sweetwater Creek State Park', coordinates: { lat: 33.7490, lng: -84.6271 }, accessibility: 'Clear Bank', amenities: { restrooms: true, playground: false, picnicTables: true, shadedArea: true }, targetSpecies: ['Bass', 'Bream', 'Catfish'], fees: { parking: '$5/day', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' },
+  { id: 'lake-lanier-001', name: 'Lake Lanier — Sawnee Campground Dock', coordinates: { lat: 34.1732, lng: -84.0168 }, accessibility: 'Dock', amenities: { restrooms: true, playground: false, picnicTables: true, shadedArea: true }, targetSpecies: ['Striped Bass', 'Largemouth Bass', 'Crappie'], fees: { parking: '$5/day', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' },
+  { id: 'kennesaw-mountain-pond-001', name: 'Kennesaw Mountain — Visitors Pond', coordinates: { lat: 33.9748, lng: -84.5766 }, accessibility: 'Clear Bank', amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true }, targetSpecies: ['Bluegill', 'Bass', 'Catfish'], fees: { parking: 'Free', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' }
+];
+
+// ---------------------------------------------------------------------------
+// UI helpers
+// ---------------------------------------------------------------------------
+function showLoading(show) {
+  const el = document.getElementById('loadingState');
+  if (el) el.style.display = show ? 'block' : 'none';
+}
+
+function showError(msg) {
+  document.getElementById('cardContainer').innerHTML = `
+    <div class="text-center mt-8 p-4">
+      <p class="text-red-500 font-semibold">⚠️ Something went wrong</p>
+      <p class="text-gray-500 text-sm mt-1">${msg}</p>
+      <button onclick="init()" class="mt-3 bg-green-700 text-white px-4 py-2 rounded text-sm">Try Again</button>
+    </div>`;
+}
+
+function showGpsBanner(show) { const el = document.getElementById('gpsBanner'); if (el) el.style.display = show ? 'block' : 'none'; }
+function showWeatherBanner(show) { const el = document.getElementById('weatherBanner'); if (el) el.style.display = show ? 'block' : 'none'; }
+
+function showLocationBanner(displayName, usingGps) {
+  let el = document.getElementById('locationResolutionBanner');
+  if (!el) { el = document.createElement('div'); el.id = 'locationResolutionBanner'; document.querySelector('header').after(el); }
+  el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-indigo-50 border-indigo-200 text-indigo-800';
+  el.textContent = usingGps ? `📍 Using your current GPS location.` : `📍 Showing spots near: ${displayName}`;
+  el.style.display = 'block';
+}
+
+function showDataSourceBanner(source) {
+  let el = document.getElementById('dataSourceBanner');
+  if (!el) { el = document.createElement('div'); el.id = 'dataSourceBanner'; (document.getElementById('locationResolutionBanner') || document.querySelector('header')).after(el); }
+  if (source === 'osm') { el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-green-50 border-green-200 text-green-800'; el.textContent = '🗺️ Showing live fishing spots near your location from OpenStreetMap.'; }
+  else { el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-yellow-50 border-yellow-200 text-yellow-800'; el.textContent = '📋 Showing curated Atlanta-area spots — live data unavailable for this location.'; }
+  el.style.display = 'block';
+}
+
+function getCurrentMoonPhase() {
+  const refNew = new Date('2000-01-06T18:14:00Z');
+  return ((Date.now() - refNew) / (1000 * 60 * 60 * 24) % 29.53) / 29.53;
+}
+
+// ---------------------------------------------------------------------------
+// Quick-glance tag helpers (PRD §3: "High Activity", "Restrooms", "Easy Casting")
 // ---------------------------------------------------------------------------
 function getQuickGlanceTags(loc) {
   const tags = [];
@@ -450,12 +463,8 @@ function getQuickGlanceTags(loc) {
     tags.push(tagPill('🔥 High Activity', 'bg-green-100 text-green-700'));
   if (loc.amenities && loc.amenities.restrooms)
     tags.push(tagPill('🚻 Restrooms', 'bg-blue-100 text-blue-700'));
-  if (loc.accessibility === 'Clear Bank')
+  if (loc.accessibility === 'Dock' || loc.accessibility === 'Clear Bank')
     tags.push(tagPill('🎣 Easy Casting', 'bg-orange-100 text-orange-700'));
-  if (loc.accessibility === 'Dock')
-    tags.push(tagPill('🛥️ Dock Access', 'bg-teal-100 text-teal-700'));
-  if (loc.amenities && loc.amenities.playground)
-    tags.push(tagPill('🛝 Playground', 'bg-purple-100 text-purple-700'));
   return tags.join('');
 }
 
@@ -516,246 +525,161 @@ function renderDetailContent(loc) {
   const tempDisplay     = (loc.weather && !loc.weather.usingFallback) ? `${Math.round(loc.weather.tempF)}°F` : '--°F';
   const windDisplay     = (loc.weather && loc.weather.windMph != null && !loc.weather.usingFallback) ? `${Math.round(loc.weather.windMph)} mph` : '-- mph';
   const weatherNote     = (loc.weather && loc.weather.usingFallback)
-    ? '<p class="text-[10px] text-yellow-600 mt-1">⚠️ Estimated weather — add OpenWeather key for live data</p>'
-    : '';
+    ? '<p class="text-[10px] text-yellow-600 mt-1">⚠️ Estimated weather — add API key for live data</p>'
+    : `<p class="text-[10px] text-gray-400 mt-1">${loc.weather.description || ''}</p>`;
+
+  const bookmarkIcon = saved
+    ? '<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 19V5z"/></svg>'
+    : '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>';
 
   document.getElementById('detailContent').innerHTML = `
-    <div class="px-4 pb-6 space-y-4">
-
-      <!-- Header -->
-      <div class="flex justify-between items-start pt-2">
-        <div class="flex-1 min-w-0">
-          <h2 class="font-black text-gray-900 text-lg leading-tight">${loc.name}</h2>
-          <p class="text-xs text-gray-500 mt-0.5">${loc.region} · ${loc.distMiles} mi · ~${Math.round(loc.estDriveHours * 60)} min drive</p>
-        </div>
-        <div class="flex items-center gap-2 ml-2">
-          ${scoreBadge(loc.score)}
-          <button data-save-id="${loc.id}" onclick="toggleSave('${loc.id}', event)"
-            class="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center ${saved ? 'text-green-600' : 'text-gray-400'} hover:text-green-600 transition-colors"
-            title="${saved ? 'Remove from saved' : 'Save this spot'}">
-            ${saved
-              ? '<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 19V5z"/></svg>'
-              : '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>'
-            }
-          </button>
-        </div>
-      </div>
-
-      <!-- Tabs -->
-      <div class="flex border-b border-gray-200 gap-0 -mx-4 px-4 overflow-x-auto">
-        ${['overview','gear','amenities','forecast'].map((t,i) => `
-          <button onclick="switchDetailTab('${t}')" id="tab-btn-${t}"
-            class="tab-btn flex-shrink-0 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap
-              ${i===0 ? 'border-green-700 text-green-700' : 'border-transparent text-gray-400'}">
-            ${t === 'overview' ? '📍 Overview' : t === 'gear' ? '🎣 Fish & Gear' : t === 'amenities' ? '🏕️ Amenities' : '📅 Forecast'}
-          </button>`).join('')}
-      </div>
-
-      <!-- Overview Tab -->
-      <div id="tab-overview" class="tab-panel space-y-4">
-        <!-- Weather row -->
-        <div class="grid grid-cols-3 gap-3">
-          <div class="bg-blue-50 rounded-xl p-3 text-center">
-            <div class="text-lg font-black text-blue-800">${tempDisplay}</div>
-            <div class="text-[10px] text-blue-500 font-bold uppercase">Temp</div>
-          </div>
-          <div class="bg-gray-50 rounded-xl p-3 text-center">
-            <div class="text-lg font-black text-gray-700">${windDisplay}</div>
-            <div class="text-[10px] text-gray-400 font-bold uppercase">Wind</div>
-          </div>
-          <div class="bg-indigo-50 rounded-xl p-3 text-center">
-            <div class="text-lg font-black text-indigo-800">${moonIcon}</div>
-            <div class="text-[10px] text-indigo-400 font-bold uppercase">Moon</div>
+    <div class="bg-white rounded-2xl shadow-sm border overflow-hidden mb-6">
+      <div class="bg-green-700 p-6 text-white">
+        <div class="flex justify-between items-start mb-4">
+          <h2 class="text-xl font-black leading-tight flex-1 mr-3">${loc.name}</h2>
+          <div class="flex items-center gap-2">
+            <button data-save-id="${loc.id}" onclick="toggleSave('${loc.id}', event)"
+              class="bg-white/20 p-2 rounded-xl min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-white/30 transition-colors"
+              title="${saved ? 'Remove from saved' : 'Save this spot'}">
+              ${bookmarkIcon}
+            </button>
+            <div class="bg-white/20 backdrop-blur-md p-3 rounded-xl text-center min-w-[60px]">
+              <div class="text-[10px] uppercase font-black opacity-80">Score</div>
+              <div class="text-xl font-black">${loc.score}</div>
+            </div>
           </div>
         </div>
-        ${weatherNote}
+        <div class="flex flex-wrap gap-2">
+          ${tagPill(loc.accessibility, 'bg-white/20 text-white')}
+          ${tagPill(loc.region, 'bg-white/20 text-white')}
+          ${loc.source === 'osm' ? tagPill('Live Data', 'bg-white/20 text-white') : ''}
+        </div>
+      </div>
 
-        <!-- iNat Community Sightings panel — populated asynchronously -->
-        <div id="inat-panel-${loc.id}" class="bg-teal-50 border border-teal-100 rounded-xl p-4">
-          <div class="text-[10px] uppercase font-black text-teal-500 mb-2">🌿 Community Fish Sightings</div>
-          <div class="text-xs text-teal-600 italic">Loading nearby observations...</div>
+      <div class="flex border-b bg-gray-50">
+        <button id="btn-overview"  onclick="switchTab('overview','${loc.id}')"  class="tab-btn tab-active flex-1">Overview</button>
+        <button id="btn-fish"      onclick="switchTab('fish','${loc.id}')"      class="tab-btn tab-inactive flex-1">Fish &amp; Gear</button>
+        <button id="btn-amenities" onclick="switchTab('amenities','${loc.id}')" class="tab-btn tab-inactive flex-1">Amenities</button>
+        <button id="btn-forecast"  onclick="switchTab('forecast','${loc.id}')"  class="tab-btn tab-inactive flex-1">Forecast</button>
+      </div>
+
+      <div class="p-5">
+        <div id="tab-overview">
+          <div class="grid grid-cols-3 gap-3 mb-6">
+            <div class="bg-blue-50 p-3 rounded-xl border border-blue-100">
+              <div class="text-[10px] uppercase font-black text-blue-400 mb-1">Temp</div>
+              <div class="text-lg font-black text-blue-900">${tempDisplay}</div>
+              ${weatherNote}
+            </div>
+            <div class="bg-teal-50 p-3 rounded-xl border border-teal-100">
+              <div class="text-[10px] uppercase font-black text-teal-400 mb-1">Wind</div>
+              <div class="text-lg font-black text-teal-900">${windDisplay}</div>
+            </div>
+            <div class="bg-purple-50 p-3 rounded-xl border border-purple-100">
+              <div class="text-[10px] uppercase font-black text-purple-400 mb-1">Moon</div>
+              <div class="text-lg font-black text-purple-900">${moonIcon}</div>
+            </div>
+          </div>
+          <h4 class="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Top Species Here</h4>
+          <div class="flex flex-wrap gap-2 mb-6">
+            ${loc.targetSpecies.map(s => `
+              <div class="flex items-center gap-2 bg-gray-100 px-3 py-2 rounded-lg border">
+                <span class="text-lg">🐟</span>
+                <span class="text-sm font-bold text-gray-700">${s}</span>
+              </div>`).join('')}
+          </div>
+          <a href="https://www.google.com/maps/dir/?api=1&destination=${loc.coordinates.lat},${loc.coordinates.lng}"
+            target="_blank"
+            class="block w-full bg-green-700 text-white text-center py-4 rounded-xl font-black shadow-lg shadow-green-700/20 active:scale-95 transition-all">
+            Get Directions
+          </a>
         </div>
 
-        <!-- Species -->
-        <div>
-          <p class="text-[10px] uppercase font-black text-gray-400 mb-2">Target Species</p>
-          <div class="flex flex-wrap gap-2">
-            ${loc.targetSpecies.map(s => `<span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold">${s}</span>`).join('')}
+        <div id="tab-fish" style="display:none;">${renderGearGuide(loc)}</div>
+
+        <div id="tab-amenities" style="display:none;">
+          <div class="grid grid-cols-2 gap-4">
+            ${[{ key:'restrooms',icon:'🚻',label:'Restrooms'},{key:'playground',icon:'🛝',label:'Playground'},{key:'picnicTables',icon:'🧺',label:'Picnic Area'},{key:'shadedArea',icon:'🌳',label:'Shade'}].map(a => `
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full flex items-center justify-center ${loc.amenities[a.key] ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-300'}">${a.icon}</div>
+                <div class="text-xs font-bold ${loc.amenities[a.key] ? 'text-gray-700' : 'text-gray-400'}">${a.label}</div>
+              </div>`).join('')}
+          </div>
+          <div class="mt-8 pt-6 border-t space-y-3">
+            <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Parking Fee</span><span class="font-black text-gray-700">${loc.fees.parking}</span></div>
+            <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Fishing License</span><span class="font-black text-gray-700">${loc.fees.fishing}</span></div>
+            <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Access Type</span><span class="font-black text-gray-700">${loc.accessibility}</span></div>
           </div>
         </div>
 
-        <!-- Directions -->
-        <a href="https://www.google.com/maps/dir/?api=1&destination=${loc.coordinates.lat},${loc.coordinates.lng}"
-          target="_blank"
-          class="block w-full bg-green-700 text-white text-center py-4 rounded-xl font-black shadow-lg shadow-green-700/20 active:scale-95 transition-all">
-          Get Directions
-        </a>
-      </div>
-
-      <!-- Gear Tab -->
-      <div id="tab-gear" class="tab-panel hidden">
-        ${renderGearGuide(loc)}
-        <div class="mt-4 bg-yellow-50 border border-yellow-100 rounded-xl p-4">
-          <h5 class="text-yellow-800 font-bold text-sm mb-1">💡 Pro Tip</h5>
-          <p class="text-xs text-yellow-800 italic leading-relaxed font-medium">"${getProTip(loc)}"</p>
+        <div id="tab-forecast" style="display:none;">
+          <div id="forecastGrid" class="grid grid-cols-7 gap-1"></div>
+          <div class="mt-4 flex gap-4 justify-center">
+            <div class="flex items-center gap-1 text-[10px] font-bold"><div class="w-2 h-2 rounded bg-green-400"></div> Excellent</div>
+            <div class="flex items-center gap-1 text-[10px] font-bold"><div class="w-2 h-2 rounded bg-yellow-300"></div> Good</div>
+            <div class="flex items-center gap-1 text-[10px] font-bold"><div class="w-2 h-2 rounded bg-red-400"></div> Poor</div>
+          </div>
         </div>
       </div>
 
-      <!-- Amenities Tab -->
-      <div id="tab-amenities" class="tab-panel hidden space-y-4">
-        <div class="grid grid-cols-2 gap-3">
-          ${amenityRow('🚻', 'Restrooms', loc.amenities.restrooms)}
-          ${amenityRow('🛝', 'Playground', loc.amenities.playground)}
-          ${amenityRow('🍽️', 'Picnic Area', loc.amenities.picnicTables)}
-          ${amenityRow('🌳', 'Shaded Area', loc.amenities.shadedArea)}
-        </div>
-        <div class="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
-          <div class="flex justify-between"><span class="text-gray-500 text-xs">Parking Fee</span><span class="font-bold text-xs">${loc.fees.parking}</span></div>
-          <div class="flex justify-between"><span class="text-gray-500 text-xs">Fishing License</span><span class="font-bold text-xs">${loc.fees.fishing}</span></div>
-          <div class="flex justify-between"><span class="text-gray-500 text-xs">Access Type</span><span class="font-bold text-xs">${loc.accessibility}</span></div>
-        </div>
-        ${renderDNRPanel(loc)}
+      <div class="mx-5 mb-5 bg-yellow-50 border-2 border-dashed border-yellow-200 rounded-xl p-4">
+        <div class="text-[10px] uppercase font-black text-yellow-600 mb-1">Parent Pro-Tip</div>
+        <p class="text-xs text-yellow-800 italic leading-relaxed font-medium">"${getProTip(loc)}"</p>
       </div>
-
-      <!-- Forecast Tab -->
-      <div id="tab-forecast" class="tab-panel hidden">
-        <p class="text-[10px] uppercase font-black text-gray-400 mb-3">30-Day Fish Activity Forecast</p>
-        <div class="grid grid-cols-7 gap-1" id="forecastGrid-${loc.id}"></div>
-        <div class="mt-3 flex gap-3 text-[10px] text-gray-500">
-          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span> Excellent (70+)</span>
-          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-yellow-400 inline-block"></span> Good (45–69)</span>
-          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-400 inline-block"></span> Poor (&lt;45)</span>
-        </div>
-      </div>
-
     </div>`;
-
-  // Initialize forecast grid
-  renderForecastGrid(loc);
-
-  // Trigger iNaturalist enrichment asynchronously after DOM is painted
-  setTimeout(function() { loadAndRenderINatPanel(loc); }, 0);
 }
 
 // ---------------------------------------------------------------------------
 // Main init
 // ---------------------------------------------------------------------------
-let allResults = [];
-
 async function init() {
   showLoading(true);
+  showGpsBanner(false);
+  showWeatherBanner(false);
+  document.getElementById('cardContainer').innerHTML = '';
 
-  // --- resolve user coordinates ---
-  const locationInput = (document.getElementById('locationInput')?.value || '').trim();
-  let userCoords = null;
+  const rawInput = document.getElementById('locationInput').value;
+  const useGps   = isCurrentLocationRequest(rawInput);
+  let userCoords = null, displayName = '', usingGps = false;
 
-  if (isCurrentLocationRequest(locationInput)) {
-    try { userCoords = await getGpsLocation(); }
-    catch (e) {
-      console.warn('[init] GPS denied/unavailable:', e);
-      userCoords = null;
-    }
+  if (useGps) {
+    try { userCoords = await getGpsLocation(); displayName = 'your GPS location'; usingGps = true; }
+    catch { userCoords = ATLANTA_FALLBACK; displayName = 'Atlanta, GA (fallback)'; showGpsBanner(true); }
   } else {
-    userCoords = await geocodeTypedLocation(locationInput);
+    const geocoded = await geocodeTypedLocation(rawInput);
+    if (geocoded) { userCoords = { lat: geocoded.lat, lng: geocoded.lng }; displayName = geocoded.displayName; }
+    else { showLoading(false); showError(`Could not find "${rawInput}". Try a different city, address, or landmark.`); return; }
   }
 
-  if (!userCoords) {
-    userCoords = ATLANTA_FALLBACK;
-    showBanner('📍 Using Atlanta as your location. Enter a city above for better results.', 'yellow');
-  } else if (isCurrentLocationRequest(locationInput)) {
-    showBanner('📍 Using your current GPS location.', 'green');
-  } else {
-    showBanner(`📍 Showing spots near: ${userCoords.displayName || locationInput}`, 'green');
-  }
-
-  // Bust cache for fresh data on each explicit search
+  showLocationBanner(displayName, usingGps);
   bustCacheForCoords(userCoords.lat, userCoords.lng);
 
-  const maxDriveHours = parseFloat(document.getElementById('driveTime')?.value || '1');
-  const childAge      = parseInt(document.getElementById('childAge')?.value || '6', 10);
+  let originWeather;
+  try { originWeather = await fetchWeather(userCoords.lat, userCoords.lng, true); }
+  catch { originWeather = { tempF: 68, pressureHpa: 1016, usingFallback: true }; }
+  showWeatherBanner(!!originWeather.usingFallback);
 
-  const weather   = await fetchWeather(userCoords.lat, userCoords.lng, true);
   const moonPhase = getCurrentMoonPhase();
+  let locations   = await fetchFishingSpotsNearby(userCoords.lat, userCoords.lng, true);
+  const usingLive = locations.length > 0;
+  if (!usingLive) locations = STATIC_FALLBACK_SPOTS;
+  showDataSourceBanner(usingLive ? 'osm' : 'static');
 
-  // Fetch OSM spots
-  let osmSpots = await fetchFishingSpotsNearby(userCoords.lat, userCoords.lng, true);
-  if (osmSpots.length === 0) {
-    osmSpots = await loadFallbackSpots();
-    if (osmSpots.length > 0) showBanner('📂 Showing curated spots — live data unavailable.', 'yellow');
-  }
+  const childAge      = parseInt(document.getElementById('childAge').value)  || 6;
+  const maxDriveHours = parseFloat(document.getElementById('driveTime').value) || 1.5;
 
-  // Filter and score
-  allResults = osmSpots
-    .map(loc => {
-      const dist = haversineDistance(userCoords, loc.coordinates);
-      const estHours = dist / 45;
-      return { ...loc, distMiles: Math.round(dist), estDriveHours: estHours, weather };
-    })
-    .filter(loc => {
-      if (loc.estDriveHours > maxDriveHours) return false;
-      if (childAge < 6 && loc.accessibility === 'Obstructed Bank') return false;
-      return true;
-    })
-    .map(loc => {
-      const score = calcSuccessScore(loc, weather, moonPhase, childAge);
-      return { ...loc, score };
-    })
+  const candidates = locations
+    .map(loc => { const distMiles = haversineDistance(userCoords, loc.coordinates); return { ...loc, distMiles: Math.round(distMiles), estDriveHours: distMiles / 45 }; })
+    .filter(loc => { if (childAge < 6 && loc.accessibility === 'Obstructed Bank') return false; return loc.estDriveHours <= maxDriveHours; })
     .sort((a, b) => a.distMiles - b.distMiles);
 
-  // ── DNR Enrichment: merge GA DNR access points into results ──
-  try {
-    var dnrSpots = await enrichFromDNR(userCoords.lat, userCoords.lng, OVERPASS_RADIUS_M);
-    if (dnrSpots.length > 0) {
-      allResults = allResults.map(function(loc) {
-        var match = matchDNRRecord(loc, dnrSpots);
-        return match ? mergeDNRIntoLoc(loc, match) : loc;
-      });
-      // Add DNR access points not matched to any existing result
-      var matchedNames = {};
-      allResults.forEach(function(l) { matchedNames[l.name.toLowerCase()] = true; });
-      var dnrOnly = dnrSpots.filter(function(d) {
-        if (!d.coordinates.lat || !d.coordinates.lng) return false;
-        if (matchedNames[d.name.toLowerCase()]) return false;
-        var distMi = haversineDistance(userCoords, d.coordinates);
-        return (distMi / 45) <= maxDriveHours;
-      }).map(function(d) {
-        var distMi = haversineDistance(userCoords, d.coordinates);
-        var fw = { tempF: 68, pressureHpa: 1016, usingFallback: true };
-        var loc = {
-          id: d.dnrId, name: d.name, coordinates: d.coordinates,
-          accessibility: d.accessibility,
-          targetSpecies: d.confirmedSpecies.length > 0 ? d.confirmedSpecies : inferSpecies(d.coordinates.lat),
-          amenities: {
-            restrooms: d.amenities.restrooms, restroomsADA: d.amenities.restroomsADA,
-            picnicTables: d.amenities.picnicArea,
-            parking: d.amenities.parking, parkingADA: d.amenities.parkingADA,
-            dockADA: d.amenities.dockADA, camping: d.amenities.camping,
-            baitShop: d.amenities.baitShop, equipmentRental: d.amenities.equipmentRental,
-            loanPole: d.amenities.loanPole, kidsProgram: d.amenities.kidsProgram,
-            playground: false, shadedArea: false,
-          },
-          fees: d.fees,
-          region: d.county ? d.county + ' County, GA' : 'Georgia',
-          source: 'dnr', distMiles: Math.round(distMi), estDriveHours: distMi / 45,
-          weather: fw,
-          dnr: {
-            waterbody: d.waterbody, county: d.county, acres: d.acres,
-            status: d.status, operator: d.operator, phone: d.phone,
-            rampType: d.rampType, numLanes: d.numLanes,
-            motorRestrictions: d.fishing.motorRestrictions, yearRound: d.fishing.yearRound,
-            bankFishing: d.fishing.bankFishing, pier: d.fishing.pier,
-            moreInfo: d.moreInfo, infoLink: d.infoLink,
-          },
-        };
-        var score = calcSuccessScore(loc, fw, moonPhase, childAge);
-        return Object.assign({}, loc, { score: score });
-      });
-      allResults = allResults.concat(dnrOnly).sort(function(a, b) { return a.distMiles - b.distMiles; });
-      console.log('[DNR] merged; added ' + dnrOnly.length + ' DNR-only spots');
-    }
-  } catch (err) {
-    console.warn('[DNR] enrichment failed:', err.message);
-  }
+  const spotWeathers = await Promise.all(candidates.map(loc => fetchWeather(loc.coordinates.lat, loc.coordinates.lng, true).catch(() => originWeather)));
+
+  allResults = candidates.map((loc, i) => {
+    const spotWeather = spotWeathers[i] || originWeather;
+    const score = calcSuccessScore(loc, spotWeather, moonPhase, childAge);
+    return { ...loc, weather: spotWeather, score };
+  });
 
   showLoading(false);
   renderCards(allResults);

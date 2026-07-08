@@ -403,17 +403,6 @@ function getProTip(loc) {
 }
 
 // ---------------------------------------------------------------------------
-// Static fallback spots
-// ---------------------------------------------------------------------------
-const STATIC_FALLBACK_SPOTS = [
-  { id: 'lake-allatoona-001', name: 'Lake Allatoona — McKaskey Creek', coordinates: { lat: 34.1473, lng: -84.7229 }, accessibility: 'Dock', amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true }, targetSpecies: ['Largemouth Bass', 'Crappie', 'Bluegill'], fees: { parking: '$5/day', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' },
-  { id: 'stone-mountain-lake-001', name: 'Stone Mountain Park — Fishing Area', coordinates: { lat: 33.8081, lng: -84.1452 }, accessibility: 'Clear Bank', amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true }, targetSpecies: ['Bass', 'Bluegill', 'Catfish'], fees: { parking: '$20/vehicle', fishing: 'Free with park entry' }, region: 'Atlanta, GA', source: 'static' },
-  { id: 'sweetwater-creek-001', name: 'Sweetwater Creek State Park', coordinates: { lat: 33.7490, lng: -84.6271 }, accessibility: 'Clear Bank', amenities: { restrooms: true, playground: false, picnicTables: true, shadedArea: true }, targetSpecies: ['Bass', 'Bream', 'Catfish'], fees: { parking: '$5/day', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' },
-  { id: 'lake-lanier-001', name: 'Lake Lanier — Sawnee Campground Dock', coordinates: { lat: 34.1732, lng: -84.0168 }, accessibility: 'Dock', amenities: { restrooms: true, playground: false, picnicTables: true, shadedArea: true }, targetSpecies: ['Striped Bass', 'Largemouth Bass', 'Crappie'], fees: { parking: '$5/day', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' },
-  { id: 'kennesaw-mountain-pond-001', name: 'Kennesaw Mountain — Visitors Pond', coordinates: { lat: 33.9748, lng: -84.5766 }, accessibility: 'Clear Bank', amenities: { restrooms: true, playground: true, picnicTables: true, shadedArea: true }, targetSpecies: ['Bluegill', 'Bass', 'Catfish'], fees: { parking: 'Free', fishing: 'GA License Required' }, region: 'Atlanta, GA', source: 'static' }
-];
-
-// ---------------------------------------------------------------------------
 // UI helpers
 // ---------------------------------------------------------------------------
 function showLoading(show) {
@@ -441,11 +430,12 @@ function showLocationBanner(displayName, usingGps) {
   el.style.display = 'block';
 }
 
-function showDataSourceBanner(source) {
+function showDataSourceBanner(show) {
   let el = document.getElementById('dataSourceBanner');
   if (!el) { el = document.createElement('div'); el.id = 'dataSourceBanner'; (document.getElementById('locationResolutionBanner') || document.querySelector('header')).after(el); }
-  if (source === 'osm') { el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-green-50 border-green-200 text-green-800'; el.textContent = '🗺️ Showing live fishing spots near your location from OpenStreetMap.'; }
-  else { el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-yellow-50 border-yellow-200 text-yellow-800'; el.textContent = '📋 Showing curated Atlanta-area spots — live data unavailable for this location.'; }
+  if (!show) { el.style.display = 'none'; return; }
+  el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-green-50 border-green-200 text-green-800';
+  el.textContent = '🗺️ Showing live fishing spots near your location from OpenStreetMap.';
   el.style.display = 'block';
 }
 
@@ -474,7 +464,12 @@ function getQuickGlanceTags(loc) {
 function renderCards(results) {
   const container = document.getElementById('cardContainer');
   if (results.length === 0) {
-    container.innerHTML = `<div class="text-center py-20 text-gray-400 text-sm">No spots found within your drive time. Try increasing the Max Drive or checking your location.</div>`;
+    container.innerHTML = `
+      <div class="text-center py-20 px-6 text-gray-400">
+        <div class="text-5xl mb-4">🎣</div>
+        <p class="font-bold text-gray-600 text-base">Couldn't find any fishing spots</p>
+        <p class="text-sm mt-1">Try a different area, or increase your Max Drive time.</p>
+      </div>`;
     return;
   }
   container.innerHTML = results.map(loc => {
@@ -660,10 +655,15 @@ async function init() {
   showWeatherBanner(!!originWeather.usingFallback);
 
   const moonPhase = getCurrentMoonPhase();
-  let locations   = await fetchFishingSpotsNearby(userCoords.lat, userCoords.lng, true);
-  const usingLive = locations.length > 0;
-  if (!usingLive) locations = STATIC_FALLBACK_SPOTS;
-  showDataSourceBanner(usingLive ? 'osm' : 'static');
+  const locations = await fetchFishingSpotsNearby(userCoords.lat, userCoords.lng, true);
+  if (locations.length === 0) {
+    showDataSourceBanner(false);
+    showLoading(false);
+    allResults = [];
+    renderCards(allResults);
+    return;
+  }
+  showDataSourceBanner(true);
 
   const childAge      = parseInt(document.getElementById('childAge').value)  || 6;
   const maxDriveHours = parseFloat(document.getElementById('driveTime').value) || 1.5;

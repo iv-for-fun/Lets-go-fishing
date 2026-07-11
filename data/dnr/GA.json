@@ -2,7 +2,7 @@
   "state": "GA",
   "source": "Georgia DNR — Wildlife Resources Division (SAMPLE DATA)",
   "curated": true,
-  "note": "Sample records for real Georgia Public Fishing Areas. Coordinates are approximate and amenity/species details are illustrative — replace with authoritative GA DNR data before relying on this (tracking: repo issues #13/#33). `curated: true` protects this file from being overwritten by tools/build_dnr_data.py.",
+  "note": "Sample records for real Georgia Public Fishing Areas. Coordinates are approximate and amenity/species details are illustrative — replace with authoritative GA DNR data before relying on this (tracking: repo issue #33). `curated: true` protects this file from being overwritten by tools/build_dnr_data.py.",
   "records": [
     {
       "dnrId": "ga-marben-pfa",

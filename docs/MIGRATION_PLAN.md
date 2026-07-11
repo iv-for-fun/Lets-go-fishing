@@ -139,7 +139,6 @@ nodes per state once, then spatial-joins in code** — no per-spot network calls
 
 ## 12. Related issues / deferred
 
-- #33 — AI Research Agent rebuild (iNat done; DNR done; LLM deferred)
+- #33 — AI Research Agent rebuild (iNat done; DNR done; LLM deferred); also tracks official per-state DNR data replacing the OSM baseline over time
 - #34 — accessibility & legal info surfaced, not used to exclude
-- #13 — official per-state DNR data (replaces OSM baseline over time)
-- #1 — OpenWeather key rotation (separate, deferred)
+- #40 — rotate the committed OpenWeather API key (separate, deferred)

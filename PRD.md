@@ -310,11 +310,15 @@ lets-go-fishing/
 │   ├── locations.json          ← Curated spot dataset (not currently used as a runtime fallback)
 │   ├── us-states-borders.geojson ← State polygons; used to scope DNR loading to the perimeter
 │   └── dnr/
-│       ├── index.json          ← Manifest: which states have DNR data files
-│       └── {ABBR}.json         ← Per-state DNR public-access records (GA seeded with samples)
+│       ├── index.json          ← Manifest: which states have DNR data files (regenerated)
+│       └── {ABBR}.json         ← Per-state DNR public-access records (GA curated; others generated)
+├── tools/
+│   └── build_dnr_data.py       ← Generates data/dnr/{ABBR}.json for all states from OpenStreetMap
 └── .github/
-    └── workflows/      ← GitHub Pages deployment
+    └── workflows/      ← GitHub Pages deploy · state-borders gen · DNR-data gen (generate-dnr-data.yml)
 ```
+
+**Populating DNR data for all states:** run the **Generate DNR Data** workflow (Actions tab → `workflow_dispatch`). It runs `tools/build_dnr_data.py` on GitHub (where Overpass is reachable), which builds a per-state file of real OpenStreetMap boat-ramp / fishing-access points for every state, filtered to each state's polygon, and rebuilds the manifest. Files marked `"curated": true` (e.g. `GA.json`) are never overwritten, so authoritative per-state data always wins over the OSM baseline. OSM source is community data, not official DNR records — labelled as such in each generated file.
 
 ---
 
@@ -348,7 +352,7 @@ lets-go-fishing/
 | 10 | Leaflet map view | ✅ Shipped | |
 | 11 | Nominatim geocoding | ✅ Shipped | |
 | 12 | AI Research Agent (DNR + iNat + LLM) | 🟡 Partial | iNat panel + perimeter-scoped DNR enrichment shipped in `enrichment.js`/`app.js` (v1.4); only LLM summary still backlog. Tracked in issue #33 |
-| 13 | Real DNR data per state | 🔲 Backlog | Infra ready: add `data/dnr/{ABBR}.json` + a manifest entry per state. GA has sample data; replace with authoritative records and expand states |
+| 13 | Real DNR data per state | 🟡 Partial | Pipeline shipped: `tools/build_dnr_data.py` + `generate-dnr-data.yml` build all states from OpenStreetMap on demand. Replace OSM baseline with authoritative state-agency data per state (drop in a `"curated": true` file) as it's sourced |
 | 14 | PWA / offline support | 🔲 Backlog | Service worker + manifest |
 | 15 | User-submitted fish reports | 🔲 Backlog | Requires backend |
 | 16 | Push notifications (tidal/weather alerts) | 🔲 Backlog | |

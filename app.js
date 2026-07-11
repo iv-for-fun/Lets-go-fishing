@@ -575,6 +575,12 @@ function renderDetailContent(loc) {
               <div class="text-lg font-black text-purple-900">${moonIcon}</div>
             </div>
           </div>
+          <div id="inat-panel-${loc.id}" class="mb-6 bg-teal-50 border border-teal-100 rounded-xl p-4">
+            <div class="text-[10px] uppercase font-black text-teal-600 mb-2">🌿 Community Fish Sightings</div>
+            <div data-inat-body class="space-y-0.5">
+              <div class="text-xs text-teal-600 italic">Loading recent observations nearby…</div>
+            </div>
+          </div>
           <h4 class="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Top Species Here</h4>
           <div class="flex flex-wrap gap-2 mb-6">
             ${loc.targetSpecies.map(s => `
@@ -622,6 +628,76 @@ function renderDetailContent(loc) {
         <p class="text-xs text-yellow-800 italic leading-relaxed font-medium">"${getProTip(loc)}"</p>
       </div>
     </div>`;
+
+  // Kick off async iNaturalist enrichment for the Community Fish Sightings panel.
+  loadAndRenderINatPanel(loc);
+}
+
+// ---------------------------------------------------------------------------
+// iNaturalist community fish sightings (free, no API key)
+// Fetches recent verifiable fish observations within 10 km / last 60 days and
+// renders up to 5 into the Overview tab. Cached in-memory per spot for the
+// session. Fully guarded — any failure degrades to a friendly message.
+// ---------------------------------------------------------------------------
+const _inatCache = {};
+
+async function fetchINatSightings(lat, lng) {
+  const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const url = `https://api.inaturalist.org/v1/observations` +
+    `?lat=${lat}&lng=${lng}&radius=10&iconic_taxa=Actinopterygii` +
+    `&verifiable=true&photos=true&order=desc&order_by=observed_on` +
+    `&per_page=5&d1=${since}`;
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000); // PRD: 8s timeout
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`iNat HTTP ${res.status}`);
+    const json = await res.json();
+    return Array.isArray(json.results) ? json.results.slice(0, 5) : [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function loadAndRenderINatPanel(loc) {
+  const panel = document.getElementById(`inat-panel-${loc.id}`);
+  if (!panel) return;
+  const body = panel.querySelector('[data-inat-body]');
+  const render = html => { if (body) body.innerHTML = html; };
+
+  try {
+    let sightings = _inatCache[loc.id];
+    if (!sightings) {
+      sightings = await fetchINatSightings(loc.coordinates.lat, loc.coordinates.lng);
+      _inatCache[loc.id] = sightings;
+    }
+    if (!sightings.length) {
+      render('<div class="text-xs text-teal-600 italic">No recent fish sightings reported nearby.</div>');
+      return;
+    }
+    render(sightings.map(o => {
+      const name  = (o.taxon && (o.taxon.preferred_common_name || o.taxon.name)) || 'Unknown fish';
+      const when  = o.observed_on_string || o.observed_on || '';
+      const who   = (o.user && (o.user.name || o.user.login)) || '';
+      const photo = (o.photos && o.photos[0] && o.photos[0].url) ||
+                    (o.taxon && o.taxon.default_photo && o.taxon.default_photo.square_url) || '';
+      const thumb = photo
+        ? `<img src="${photo}" alt="" class="w-10 h-10 rounded-lg object-cover flex-shrink-0" loading="lazy">`
+        : `<div class="w-10 h-10 rounded-lg bg-teal-100 flex items-center justify-center flex-shrink-0">🐟</div>`;
+      const meta  = [when, who].filter(Boolean).join(' · ');
+      return `<a href="${o.uri || '#'}" target="_blank" rel="noopener"
+                class="flex items-center gap-3 py-1.5 hover:bg-teal-100/50 rounded-lg -mx-1 px-1 transition-colors">
+                ${thumb}
+                <div class="min-w-0">
+                  <div class="text-xs font-bold text-teal-900 truncate">${name}</div>
+                  <div class="text-[10px] text-teal-600 truncate">${meta}</div>
+                </div>
+              </a>`;
+    }).join(''));
+  } catch (err) {
+    console.warn('[iNat] enrichment failed:', err.message);
+    render('<div class="text-xs text-teal-600 italic">Community sightings unavailable right now.</div>');
+  }
 }
 
 // ---------------------------------------------------------------------------

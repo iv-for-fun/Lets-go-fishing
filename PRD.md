@@ -110,7 +110,7 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 
 ### 4.6 AI Research Agent (Spot Enrichment) 🔲 Backlog — NOT shipped (reverted)
 
-> **Status (v1.4):** This section describes intended, not shipped, behavior. The v1.3 attempt was never functional — `enrichment.js` was never committed and the call sites broke the live site, so the work was reverted. Rebuild is tracked in **issue #33**. The design below is retained as the target spec.
+> **Status (v1.4):** Partially rebuilt. The v1.3 attempt was never functional — `enrichment.js` was never committed and the call sites broke the live site, so the work was reverted. Rebuild is tracked in **issue #33**. **The iNaturalist "Community Fish Sightings" panel (§4.6 step 2) has since been re-implemented** directly in `app.js` (`fetchINatSightings` + `loadAndRenderINatPanel`), fully guarded with a graceful fallback. DNR enrichment (step 1) and LLM summarization (step 3) remain backlog. The design below is retained as the target spec.
 
 When a user opens a spot's detail view, a lightweight client-side research pipeline runs asynchronously to enrich the spot's data with real-world information. All logic would live in `enrichment.js`.
 
@@ -343,7 +343,7 @@ lets-go-fishing/
 | 9 | Saved spots (localStorage) | ✅ Shipped | |
 | 10 | Leaflet map view | ✅ Shipped | |
 | 11 | Nominatim geocoding | ✅ Shipped | |
-| 12 | AI Research Agent (DNR + iNat + LLM) | 🔲 Backlog (reverted) | v1.3 attempt never worked (`enrichment.js` never committed); rebuild tracked in issue #33 |
+| 12 | AI Research Agent (DNR + iNat + LLM) | 🟡 Partial | iNat sightings panel rebuilt in `app.js` (v1.4); DNR + LLM still backlog. Rebuild tracked in issue #33 |
 | 13 | GA DNR confirmed species data file | 🔲 Backlog | Populate `data/dnr-access-points.json` with real GA DNR records |
 | 14 | PWA / offline support | 🔲 Backlog | Service worker + manifest |
 | 15 | User-submitted fish reports | 🔲 Backlog | Requires backend |

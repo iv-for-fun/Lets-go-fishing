@@ -28,7 +28,13 @@ Primary inventory is OpenStreetMap (community-maintained) via Overpass —
 labelled as such in every file's `source` field. Curated DNR records in
 data/dnr/{ABBR}.json (see tools/build_dnr_data.py) are fuzzy-merged in where
 they match an OSM spot by name + proximity (<=3km); unmatched DNR records
-are kept as standalone spots.
+are kept as standalone spots. The DNR fuzzy-match algorithm here (stop
+words, 0.5 similarity threshold, 3km radius) is a deliberate Python port of
+enrichment.js's runtime matcher (_nameSimilarity/matchDNRRecord), which
+stays live as a fallback for any state without a built file yet (see
+docs/MIGRATION_PLAN.md §8). If you tune the threshold or stop-word list in
+one, update the other, or build-time and runtime merges will silently
+diverge for the same spot.
 
 USAGE
 -----
@@ -73,6 +79,7 @@ NEARBY_RADIUS_MI  = 8.0   # within the "~5-10 mi" range in §6
 NEARBY_LIMIT      = 3
 
 FISHING_VALUES = ("yes", "catch_and_release", "permissive")
+_FISHING_VALUE_PATTERN = "|".join(FISHING_VALUES)
 
 
 # --------------------------------------------------------------------------- #
@@ -146,8 +153,8 @@ def fishing_query(bbox):
 (
   node["leisure"="fishing"]({b});
   way["leisure"="fishing"]({b});
-  node["fishing"~"^(yes|catch_and_release|permissive)$"]({b});
-  way["fishing"~"^(yes|catch_and_release|permissive)$"]({b});
+  node["fishing"~"^({_FISHING_VALUE_PATTERN})$"]({b});
+  way["fishing"~"^({_FISHING_VALUE_PATTERN})$"]({b});
   node["sport"="fishing"]({b});
   way["sport"="fishing"]({b});
   node["man_made"="fishing_peg"]({b});
@@ -214,9 +221,14 @@ def classify_fishing_element(tags):
     fishing spot and how to classify it. Returns a dict of derived fields, or
     None if the element should be excluded. Pure function — no I/O."""
     fishing_val = tags.get("fishing")
+    access_val = tags.get("access")
 
-    # Hard excludes (never shown), per MIGRATION_PLAN §5.
+    # Hard excludes (never shown), per MIGRATION_PLAN §5. `access=private/no`
+    # is the general-purpose OSM way to mark private land and applies even
+    # when the more specific `fishing=*` tag is absent.
     if fishing_val in ("private", "no"):
+        return None
+    if access_val in ("private", "no"):
         return None
     if tags.get("landuse") == "aquaculture" or tags.get("industrial") == "aquaculture":
         return None
@@ -279,7 +291,10 @@ def element_to_spot(el, abbr):
     """Pure: turn one raw Overpass element into a spot record (sans amenity
     join / DNR merge, added later). Returns None if not a relevant spot."""
     if el.get("type") == "relation":
-        return None  # relations (e.g. leisure=park boundaries) are noise, not point access
+        # Our Overpass queries only ever request node/way (see fishing_query),
+        # so this never actually fires today — kept as a defensive guard in
+        # case a future query addition starts pulling relations too.
+        return None
     lat, lng = element_center(el)
     if lat is None or lng is None:
         return None
@@ -301,50 +316,44 @@ def element_to_spot(el, abbr):
         "wheelchairAccessible": info["wheelchairAccessible"],
         "targetSpecies": info["targetSpecies"],
         "amenities": {
-            "restrooms": False, "changingTable": False, "drinkingWater": False,
-            "playground": False, "parking": False, "parkingFee": False, "shelter": False,
+            "restrooms": False, "restroomsADA": False, "changingTable": False,
+            "drinkingWater": False, "playground": False, "parking": False,
+            "parkingFee": False, "shelter": False,
         },
         "nearbyBait": [],
         "nearbyFood": [],
         "region": None,
         "source": "osm",
+        "dnr": None,  # every spot carries this key so a consumer never needs a hasattr/`in` check
     }
 
 
 # --------------------------------------------------------------------------- #
 # Amenity/service categorization + spatial join (pure — unit-tested offline).
 # --------------------------------------------------------------------------- #
-_ON_SITE_PREDICATES = {
-    "toilets":        lambda t: t.get("amenity") == "toilets",
-    "drinking_water": lambda t: t.get("amenity") == "drinking_water",
-    "playground":     lambda t: t.get("leisure") == "playground",
-    "parking":        lambda t: t.get("amenity") == "parking",
-    "shelter":        lambda t: t.get("amenity") == "shelter",
-}
-_NEARBY_PREDICATES = {
-    "bait": lambda t: t.get("shop") == "fishing",
-    "food": lambda t: t.get("amenity") in ("cafe", "fast_food", "restaurant"),
-}
-
-_ON_SITE_FIELD = {
-    "toilets": "restrooms",
-    "drinking_water": "drinkingWater",
-    "playground": "playground",
-    "parking": "parking",
-    "shelter": "shelter",
-}
-
-
 def amenity_category(tags):
-    """Pure: classify a support element's tags. Returns (scope, category) or
-    None if it's not one of the categories we care about."""
-    for cat, pred in _ON_SITE_PREDICATES.items():
-        if pred(tags):
-            return ("on_site", cat)
-    for cat, pred in _NEARBY_PREDICATES.items():
-        if pred(tags):
-            return ("nearby", cat)
+    """Pure: classify a support element's tags. Returns (scope, category); for
+    "on_site" items `category` doubles as the amenities-dict field name, so
+    there's exactly one place mapping OSM tags to output fields (no separate
+    predicate/field-name tables that can drift out of sync)."""
+    if tags.get("amenity") == "toilets":
+        return ("on_site", "restrooms")
+    if tags.get("amenity") == "drinking_water":
+        return ("on_site", "drinkingWater")
+    if tags.get("leisure") == "playground":
+        return ("on_site", "playground")
+    if tags.get("amenity") == "parking":
+        return ("on_site", "parking")
+    if tags.get("amenity") == "shelter":
+        return ("on_site", "shelter")
+    if tags.get("shop") == "fishing":
+        return ("nearby", "bait")
+    if tags.get("amenity") in ("cafe", "fast_food", "restaurant"):
+        return ("nearby", "food")
     return None
+    # Note: §6 also lists amenity=picnic_table / bbq / bench as candidates for
+    # the on-site join; deliberately not pulled/joined yet in Phase 1 (kept to
+    # the fields the merged-record schema in MIGRATION_PLAN §9 actually uses).
 
 
 def support_element_to_point(el):
@@ -367,43 +376,53 @@ def support_element_to_point(el):
         "lng": lng,
         "name": tags.get("name"),
         "changingTable": tags.get("changing_table") == "yes",
+        "wheelchair": tags.get("toilets:wheelchair") == "yes" or tags.get("wheelchair") == "yes",
         "fee": tags.get("fee") == "yes",
     }
 
 
-def join_amenities(spot_coords, support_points, radius_mi=ON_SITE_RADIUS_MI):
+def bucket_support_points(support_points):
+    """Pure: group a state's support points once by (scope, category) so a
+    per-spot join scans only the relevant bucket instead of the whole list —
+    join_amenities/nearest_services are called once per spot, so without this
+    a state with many spots and many amenity nodes re-filters the same full
+    list repeatedly."""
+    buckets = {}
+    for p in support_points:
+        buckets.setdefault((p["scope"], p["category"]), []).append(p)
+    return buckets
+
+
+def join_amenities(spot_coords, buckets, radius_mi=ON_SITE_RADIUS_MI):
     """Pure: fold on-site support points within radius_mi into an amenities
     dict. Unknown stays False here — the UI layer (issue #37) is responsible
     for rendering False as 'not listed' rather than a confirmed absence."""
     result = {
-        "restrooms": False, "changingTable": False, "drinkingWater": False,
-        "playground": False, "parking": False, "parkingFee": False, "shelter": False,
+        "restrooms": False, "restroomsADA": False, "changingTable": False,
+        "drinkingWater": False, "playground": False, "parking": False,
+        "parkingFee": False, "shelter": False,
     }
-    for p in support_points:
-        if p["scope"] != "on_site":
-            continue
-        field = _ON_SITE_FIELD.get(p["category"])
-        if not field:
-            continue
-        d = haversine_mi(spot_coords["lat"], spot_coords["lng"], p["lat"], p["lng"])
-        if d > radius_mi:
-            continue
-        result[field] = True
-        if p["category"] == "toilets" and p["changingTable"]:
-            result["changingTable"] = True
-        if p["category"] == "parking" and p["fee"]:
-            result["parkingFee"] = True
+    for field in ("restrooms", "drinkingWater", "playground", "parking", "shelter"):
+        for p in buckets.get(("on_site", field), []):
+            d = haversine_mi(spot_coords["lat"], spot_coords["lng"], p["lat"], p["lng"])
+            if d > radius_mi:
+                continue
+            result[field] = True
+            if field == "restrooms" and p["wheelchair"]:
+                result["restroomsADA"] = True
+            if field == "restrooms" and p["changingTable"]:
+                result["changingTable"] = True
+            if field == "parking" and p["fee"]:
+                result["parkingFee"] = True
     return result
 
 
-def nearest_services(spot_coords, support_points, category,
+def nearest_services(spot_coords, buckets, category,
                       radius_mi=NEARBY_RADIUS_MI, limit=NEARBY_LIMIT):
     """Pure: nearest `limit` nearby-scope points of `category` within
     radius_mi, sorted closest-first."""
     matches = []
-    for p in support_points:
-        if p["scope"] != "nearby" or p["category"] != category:
-            continue
+    for p in buckets.get(("nearby", category), []):
         d = haversine_mi(spot_coords["lat"], spot_coords["lng"], p["lat"], p["lng"])
         if d <= radius_mi:
             matches.append((d, p))
@@ -416,9 +435,10 @@ def nearest_services(spot_coords, support_points, category,
 
 
 # --------------------------------------------------------------------------- #
-# DNR fuzzy merge (pure — ports enrichment.js's matching logic to Python so
-# the same "name similarity + <=3km" rule applies at build time here and at
-# runtime for any state that doesn't yet have a merged file).
+# DNR normalization + fuzzy merge (pure — unit-tested offline). The matching
+# algorithm ports enrichment.js's runtime matcher (_nameSimilarity /
+# matchDNRRecord) to Python so the same rule applies at build time here and
+# at runtime for any state without a merged file yet.
 # --------------------------------------------------------------------------- #
 _DNR_STOP_WORDS = {"lake", "park", "area", "pfa", "wma", "public", "fishing",
                     "the", "at", "of", "state", "county", "creek", "pond"}
@@ -440,12 +460,72 @@ def name_similarity(a, b):
     return inter / union if union else 0.0
 
 
+def _dnr_id_fallback(name, abbr):
+    # Mirrors enrichment.js's normalizeDNRRecord fallback exactly
+    # (`${stateAbbr}-${name.toLowerCase().replace(/[^a-z0-9]+/g,'-')}`) so a
+    # record without an explicit dnrId gets the same id at build time and at
+    # runtime, instead of two different slugs for "the same" record.
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or "spot").lower()).strip("-")
+    return f"{abbr}-{slug}"
+
+
+def normalize_dnr_record(r, abbr):
+    """Pure: give every DNR record a guaranteed full shape, mirroring
+    enrichment.js's normalizeDNRRecord. Without this, OSM-generated (non-
+    curated) data/dnr/{ABBR}.json files — which only set a handful of fields
+    (see tools/build_dnr_data.py's element_to_record) — would embed a `dnr`
+    sub-object with several keys simply missing rather than defaulted, and
+    any downstream consumer relying on the normalized shape would read
+    undefined. Returns None if the record has no usable coordinates."""
+    if not r:
+        return None
+    coords = r.get("coordinates") or {}
+    lat, lng = coords.get("lat"), coords.get("lng")
+    if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+        return None
+    a = r.get("amenities") or {}
+    fishing = r.get("fishing") or {}
+    return {
+        "dnrId": r.get("dnrId") or _dnr_id_fallback(r.get("name"), abbr),
+        "name": r.get("name") or "DNR Public Access",
+        "state": abbr,
+        "waterbody": r.get("waterbody") or r.get("name") or "",
+        "county": r.get("county") or "",
+        "acres": r.get("acres"),
+        "status": r.get("status") or "Public",
+        "operator": r.get("operator") or "",
+        "phone": r.get("phone") or "",
+        "coordinates": {"lat": lat, "lng": lng},
+        "accessibility": r.get("accessibility") or "Clear Bank",
+        "rampType": r.get("rampType") or "",
+        "numLanes": r.get("numLanes"),
+        "amenities": {
+            "restrooms": bool(a.get("restrooms")), "restroomsADA": bool(a.get("restroomsADA")),
+            "parking": bool(a.get("parking")), "parkingADA": bool(a.get("parkingADA")),
+            "dockADA": bool(a.get("dockADA")), "camping": bool(a.get("camping")),
+            "baitShop": bool(a.get("baitShop")), "equipmentRental": bool(a.get("equipmentRental")),
+            "loanPole": bool(a.get("loanPole")), "kidsProgram": bool(a.get("kidsProgram")),
+            "picnicArea": bool(a.get("picnicArea")),
+        },
+        "confirmedSpecies": list(r.get("confirmedSpecies") or []),
+        "fees": r.get("fees") or {"parking": "Check Locally", "fishing": "License May Be Required"},
+        "fishing": {
+            "motorRestrictions": fishing.get("motorRestrictions") or "None listed",
+            "yearRound": fishing.get("yearRound") is not False,
+            "bankFishing": fishing.get("bankFishing") is not False,
+            "pier": bool(fishing.get("pier")),
+        },
+        "moreInfo": r.get("moreInfo") or "",
+        "infoLink": r.get("infoLink") or "",
+    }
+
+
 def match_dnr_record(spot, dnr_records, max_km=3.0):
+    """Pure: best DNR record for one spot (highest name similarity >= 0.5
+    among candidates within max_km), or None."""
     best, best_sim = None, 0.0
     for d in dnr_records:
-        dc = d.get("coordinates") or {}
-        if "lat" not in dc or "lng" not in dc:
-            continue
+        dc = d["coordinates"]
         dist_km = haversine_mi(spot["coordinates"]["lat"], spot["coordinates"]["lng"],
                                 dc["lat"], dc["lng"]) * 1.60934
         if dist_km > max_km:
@@ -454,6 +534,24 @@ def match_dnr_record(spot, dnr_records, max_km=3.0):
         if sim >= 0.5 and sim > best_sim:
             best, best_sim = d, sim
     return best
+
+
+def match_dnr_records_to_spots(spots, dnr_records, max_km=3.0):
+    """Pure: assign each DNR record to at most one spot — greedily, in spot
+    order — so the same official DNR listing never gets embedded into two
+    different OSM elements representing the same lake (e.g. a boat-ramp node
+    and a separately-tagged named water body both matching one PFA record).
+    Returns (index -> dnr record) for matched spots, and the set of claimed
+    dnrIds so callers can find the leftover (standalone) DNR records."""
+    claimed_ids = set()
+    matches = {}
+    for i, s in enumerate(spots):
+        available = [d for d in dnr_records if d["dnrId"] not in claimed_ids]
+        d = match_dnr_record(s, available, max_km=max_km)
+        if d:
+            matches[i] = d
+            claimed_ids.add(d["dnrId"])
+    return matches, claimed_ids
 
 
 def merge_dnr_into_spot(spot, d):
@@ -468,7 +566,15 @@ def merge_dnr_into_spot(spot, d):
     da = d.get("amenities") or {}
     if da.get("restrooms"):
         amenities["restrooms"] = True
+    if da.get("restroomsADA"):
+        amenities["restroomsADA"] = True
+    if da.get("parking"):
+        amenities["parking"] = True
     merged["amenities"] = amenities
+
+    merged["wheelchairAccessible"] = bool(
+        spot.get("wheelchairAccessible") or da.get("dockADA") or da.get("parkingADA")
+    )
 
     if not merged.get("legalStatus"):
         merged["legalStatus"] = "public"  # DNR-listed public access implies public
@@ -477,22 +583,39 @@ def merge_dnr_into_spot(spot, d):
     return merged
 
 
+_DNR_FEE_UNKNOWN_TEXTS = {"check locally", "unknown", "n/a", "varies", "tbd"}
+
+
+def _fee_from_dnr_fees(fees):
+    """Pure: best-effort yes/no/None from DNR's free-text parking fee, to
+    keep the top-level `fee` field's semantics (does *this* spot charge to
+    fish/park) consistent between OSM- and DNR-sourced spots, without
+    over-claiming precision the free-text source doesn't have. Placeholder
+    text like "Check Locally" (normalize_dnr_record's own default when a
+    record doesn't specify) means unspecified, not "yes there's a fee"."""
+    parking = ((fees or {}).get("parking") or "").strip().lower()
+    if not parking or parking in _DNR_FEE_UNKNOWN_TEXTS:
+        return None
+    return "no" if parking == "free" else "yes"
+
+
 def dnr_to_standalone_spot(d, abbr, state_name):
     da = d.get("amenities") or {}
     return {
-        "id": d.get("dnrId") or f"dnr-{abbr.lower()}-{(d.get('name') or 'spot').lower().replace(' ', '-')}",
-        "name": d.get("name") or "DNR Public Access",
-        "coordinates": d.get("coordinates"),
+        "id": d["dnrId"],
+        "name": d["name"],
+        "coordinates": d["coordinates"],
         "legalStatus": "public",
         "hours": None,
         "accessibility": d.get("accessibility") or "Clear Bank",
-        "fee": None,
+        "fee": _fee_from_dnr_fees(d.get("fees")),
         "operator": d.get("operator"),
         "website": d.get("infoLink"),
         "wheelchairAccessible": bool(da.get("dockADA") or da.get("parkingADA")),
         "targetSpecies": d.get("confirmedSpecies") or [],
         "amenities": {
             "restrooms": bool(da.get("restrooms")),
+            "restroomsADA": bool(da.get("restroomsADA")),
             "changingTable": False,
             "drinkingWater": False,
             "playground": False,
@@ -510,7 +633,8 @@ def dnr_to_standalone_spot(d, abbr, state_name):
 
 def dedupe_spots(spots):
     """Pure: drop spots that land on (basically) the same coordinates with
-    the same name — e.g. an OSM node and way tagged on the same feature."""
+    the same name — e.g. an OSM node and way tagged on the same feature, or
+    two Overpass query branches matching the same element."""
     seen = set()
     out = []
     for s in spots:
@@ -532,9 +656,10 @@ def load_dnr_records(abbr):
         return []
     try:
         with open(path) as f:
-            return json.load(f).get("records") or []
+            raw = json.load(f).get("records") or []
     except Exception:
         return []
+    return [r for r in (normalize_dnr_record(rec, abbr) for rec in raw) if r]
 
 
 def build_state(abbr, feature):
@@ -566,24 +691,30 @@ def build_state(abbr, feature):
         spots.append(s)
 
     support_points = [p for p in (support_element_to_point(el) for el in support_data.get("elements", [])) if p]
+    buckets = bucket_support_points(support_points)
 
     for s in spots:
-        s["amenities"] = join_amenities(s["coordinates"], support_points)
-        s["nearbyBait"] = nearest_services(s["coordinates"], support_points, "bait")
-        s["nearbyFood"] = nearest_services(s["coordinates"], support_points, "food")
+        s["amenities"] = join_amenities(s["coordinates"], buckets)
+        s["nearbyBait"] = nearest_services(s["coordinates"], buckets, "bait")
+        s["nearbyFood"] = nearest_services(s["coordinates"], buckets, "food")
 
     dnr_records = load_dnr_records(abbr)
-    merged, matched_dnr_ids = [], set()
-    for s in spots:
-        d = match_dnr_record(s, dnr_records)
-        if d:
-            merged.append(merge_dnr_into_spot(s, d))
-            matched_dnr_ids.add(d.get("dnrId"))
-        else:
-            merged.append(s)
+    dnr_matches, matched_dnr_ids = match_dnr_records_to_spots(spots, dnr_records)
+
+    merged = []
+    for i, s in enumerate(spots):
+        d = dnr_matches.get(i)
+        merged.append(merge_dnr_into_spot(s, d) if d else s)
     for d in dnr_records:
-        if d.get("dnrId") not in matched_dnr_ids:
-            merged.append(dnr_to_standalone_spot(d, abbr, state_name))
+        if d["dnrId"] not in matched_dnr_ids:
+            standalone = dnr_to_standalone_spot(d, abbr, state_name)
+            # DNR-only spots benefit from the same OSM amenity/bait/food
+            # proximity join as OSM-sourced spots, not just their own
+            # (usually sparser) curated amenity flags.
+            standalone["amenities"] = join_amenities(standalone["coordinates"], buckets)
+            standalone["nearbyBait"] = nearest_services(standalone["coordinates"], buckets, "bait")
+            standalone["nearbyFood"] = nearest_services(standalone["coordinates"], buckets, "food")
+            merged.append(standalone)
 
     merged = dedupe_spots(merged)
     print(f"[{abbr}] {len(merged)} merged spots ({len(spots)} OSM, {len(dnr_records)} DNR input records, "
@@ -622,25 +753,28 @@ def main():
         if abbr not in features:
             print(f"[{abbr}] no border geometry — skipping", flush=True)
             continue
+
         try:
             state_name, merged = build_state(abbr, features[abbr])
         except RuntimeError as e:
             print(f"[{abbr}] FAILED: {e}", flush=True)
-            continue
+        else:
+            out = {
+                "state": abbr,
+                "stateName": state_name,
+                "source": "OpenStreetMap via Overpass (community data) + state DNR curated/generated "
+                          "data (data/dnr) — see docs/MIGRATION_PLAN.md",
+                "generated": time.strftime("%Y-%m-%d"),
+                "count": len(merged),
+                "spots": merged,
+            }
+            with open(os.path.join(SPOTS_DIR, f"{abbr}.json"), "w") as f:
+                json.dump(out, f, separators=(",", ":"))
+            produced.append(abbr)
 
-        out = {
-            "state": abbr,
-            "stateName": state_name,
-            "source": "OpenStreetMap via Overpass (community data) + state DNR curated/generated "
-                      "data (data/dnr) — see docs/MIGRATION_PLAN.md",
-            "generated": time.strftime("%Y-%m-%d"),
-            "count": len(merged),
-            "spots": merged,
-        }
-        with open(os.path.join(SPOTS_DIR, f"{abbr}.json"), "w") as f:
-            json.dump(out, f, separators=(",", ":"))
-        produced.append(abbr)
-
+        # Sleep between states regardless of success/failure — a failure
+        # (rate limit, transient outage) is exactly when hammering the next
+        # state immediately would make things worse.
         if i < len(wanted) - 1:
             time.sleep(SLEEP_BETWEEN_STATES)
 

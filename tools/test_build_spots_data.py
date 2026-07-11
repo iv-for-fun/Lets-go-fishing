@@ -50,6 +50,15 @@ class ClassifyFishingElementTests(unittest.TestCase):
     def test_fishing_no_hard_excluded(self):
         self.assertIsNone(b.classify_fishing_element({"fishing": "no", "leisure": "fishing"}))
 
+    def test_access_private_hard_excluded_even_without_fishing_tag(self):
+        # A pond marked private via the general-purpose access=* tag (no
+        # fishing=private) must still be excluded — kids shouldn't be
+        # steered onto land they'd need to trespass to reach.
+        self.assertIsNone(b.classify_fishing_element({"leisure": "fishing", "access": "private"}))
+
+    def test_access_no_hard_excluded(self):
+        self.assertIsNone(b.classify_fishing_element({"leisure": "fishing", "access": "no"}))
+
     def test_aquaculture_excluded(self):
         self.assertIsNone(b.classify_fishing_element({"leisure": "fishing", "landuse": "aquaculture"}))
         self.assertIsNone(b.classify_fishing_element({"leisure": "fishing", "industrial": "aquaculture"}))
@@ -71,13 +80,17 @@ class ClassifyFishingElementTests(unittest.TestCase):
     def test_broad_named_water_kept(self):
         info = b.classify_fishing_element({"natural": "water", "name": "Clearwater Lake"})
         self.assertIsNotNone(info)
+        self.assertEqual(info["accessibility"], "Clear Bank")
+        self.assertIsNone(info["legalStatus"])  # no fishing=* tag -> unspecified, not assumed public
 
     def test_broad_unnamed_water_excluded(self):
         self.assertIsNone(b.classify_fishing_element({"natural": "water"}))
 
     def test_named_reservoir_kept(self):
-        info = b.classify_fishing_element({"landuse": "reservoir", "name": "Big Reservoir"})
+        info = b.classify_fishing_element({"landuse": "reservoir", "name": "Big Reservoir", "fishing": "yes"})
         self.assertIsNotNone(info)
+        self.assertEqual(info["accessibility"], "Clear Bank")
+        self.assertEqual(info["legalStatus"], "public")
 
     def test_irrelevant_tags_excluded(self):
         self.assertIsNone(b.classify_fishing_element({"shop": "bakery", "name": "Donuts"}))
@@ -106,6 +119,7 @@ class ElementToSpotTests(unittest.TestCase):
         self.assertEqual(spot["id"], "osm-ga-node-42")
         self.assertEqual(spot["coordinates"], {"lat": 33.5, "lng": -84.4})
         self.assertEqual(spot["source"], "osm")
+        self.assertIsNone(spot["dnr"])  # uniform key present even when there's no DNR data
 
     def test_way_uses_center(self):
         el = {"type": "way", "id": 7, "center": {"lat": 34.0, "lon": -83.9},
@@ -122,7 +136,7 @@ class ElementToSpotTests(unittest.TestCase):
 
 class AmenityCategoryTests(unittest.TestCase):
     def test_toilets_on_site(self):
-        self.assertEqual(b.amenity_category({"amenity": "toilets"}), ("on_site", "toilets"))
+        self.assertEqual(b.amenity_category({"amenity": "toilets"}), ("on_site", "restrooms"))
 
     def test_bait_shop_nearby(self):
         self.assertEqual(b.amenity_category({"shop": "fishing"}), ("nearby", "bait"))
@@ -135,55 +149,109 @@ class AmenityCategoryTests(unittest.TestCase):
         self.assertIsNone(b.amenity_category({"amenity": "bank"}))
 
 
+def _support_point(scope, category, lat, lng, **overrides):
+    p = {"scope": scope, "category": category, "lat": lat, "lng": lng,
+         "name": None, "changingTable": False, "wheelchair": False, "fee": False}
+    p.update(overrides)
+    return p
+
+
 class SpatialJoinTests(unittest.TestCase):
     SPOT = {"lat": 33.7490, "lng": -84.3880}
 
     def test_restrooms_within_radius_flagged(self):
-        points = [{"scope": "on_site", "category": "toilets", "lat": 33.7495, "lng": -84.3885,
-                   "name": None, "changingTable": False, "fee": False}]
-        result = b.join_amenities(self.SPOT, points)
+        buckets = b.bucket_support_points([_support_point("on_site", "restrooms", 33.7495, -84.3885)])
+        result = b.join_amenities(self.SPOT, buckets)
         self.assertTrue(result["restrooms"])
 
     def test_restrooms_outside_radius_not_flagged(self):
-        points = [{"scope": "on_site", "category": "toilets", "lat": 34.5, "lng": -85.5,
-                   "name": None, "changingTable": False, "fee": False}]
-        result = b.join_amenities(self.SPOT, points)
+        buckets = b.bucket_support_points([_support_point("on_site", "restrooms", 34.5, -85.5)])
+        result = b.join_amenities(self.SPOT, buckets)
         self.assertFalse(result["restrooms"])
 
-    def test_changing_table_flows_through_toilets(self):
-        points = [{"scope": "on_site", "category": "toilets", "lat": 33.7491, "lng": -84.3881,
-                   "name": None, "changingTable": True, "fee": False}]
-        result = b.join_amenities(self.SPOT, points)
+    def test_changing_table_flows_through_restrooms(self):
+        buckets = b.bucket_support_points(
+            [_support_point("on_site", "restrooms", 33.7491, -84.3881, changingTable=True)])
+        result = b.join_amenities(self.SPOT, buckets)
         self.assertTrue(result["restrooms"])
         self.assertTrue(result["changingTable"])
 
+    def test_ada_flows_through_restrooms(self):
+        buckets = b.bucket_support_points(
+            [_support_point("on_site", "restrooms", 33.7491, -84.3881, wheelchair=True)])
+        result = b.join_amenities(self.SPOT, buckets)
+        self.assertTrue(result["restroomsADA"])
+
     def test_parking_fee_flows_through_parking(self):
-        points = [{"scope": "on_site", "category": "parking", "lat": 33.7491, "lng": -84.3881,
-                   "name": None, "changingTable": False, "fee": True}]
-        result = b.join_amenities(self.SPOT, points)
+        buckets = b.bucket_support_points(
+            [_support_point("on_site", "parking", 33.7491, -84.3881, fee=True)])
+        result = b.join_amenities(self.SPOT, buckets)
         self.assertTrue(result["parking"])
         self.assertTrue(result["parkingFee"])
 
     def test_no_uniform_false_positive(self):
         # A spot with zero nearby amenity nodes must get all-False, not a
         # copy-pasted "everything present" default (today's bug being fixed).
-        result = b.join_amenities(self.SPOT, [])
+        result = b.join_amenities(self.SPOT, b.bucket_support_points([]))
         self.assertFalse(any(result.values()))
 
     def test_nearest_bait_sorted_and_limited(self):
         points = [
-            {"scope": "nearby", "category": "bait", "lat": 33.80, "lng": -84.40, "name": "Far Bait"},
-            {"scope": "nearby", "category": "bait", "lat": 33.75, "lng": -84.389, "name": "Close Bait"},
-            {"scope": "nearby", "category": "food", "lat": 33.75, "lng": -84.389, "name": "Diner"},
+            _support_point("nearby", "bait", 33.80, -84.40, name="Far Bait"),
+            _support_point("nearby", "bait", 33.75, -84.389, name="Close Bait"),
+            _support_point("nearby", "food", 33.75, -84.389, name="Diner"),
         ]
-        result = b.nearest_services(self.SPOT, points, "bait")
+        result = b.nearest_services(self.SPOT, b.bucket_support_points(points), "bait")
         self.assertEqual(result[0]["name"], "Close Bait")
         self.assertTrue(all(r["name"] != "Diner" for r in result))
 
     def test_nearest_services_respects_radius(self):
-        points = [{"scope": "nearby", "category": "bait", "lat": 40.0, "lng": -90.0, "name": "Too Far"}]
-        result = b.nearest_services(self.SPOT, points, "bait")
+        points = [_support_point("nearby", "bait", 40.0, -90.0, name="Too Far")]
+        result = b.nearest_services(self.SPOT, b.bucket_support_points(points), "bait")
         self.assertEqual(result, [])
+
+    def test_bucket_support_points_groups_by_scope_and_category(self):
+        points = [
+            _support_point("on_site", "restrooms", 1, 2),
+            _support_point("on_site", "restrooms", 3, 4),
+            _support_point("nearby", "bait", 5, 6),
+        ]
+        buckets = b.bucket_support_points(points)
+        self.assertEqual(len(buckets[("on_site", "restrooms")]), 2)
+        self.assertEqual(len(buckets[("nearby", "bait")]), 1)
+
+
+class NormalizeDnrRecordTests(unittest.TestCase):
+    def test_missing_coordinates_rejected(self):
+        self.assertIsNone(b.normalize_dnr_record({"name": "X"}, "GA"))
+
+    def test_fills_defaults_for_sparse_osm_generated_record(self):
+        # tools/build_dnr_data.py's element_to_record only sets a handful of
+        # fields (no camping/baitShop/etc.) — normalize must still produce
+        # the full guaranteed shape enrichment.js's runtime consumer expects.
+        sparse = {
+            "dnrId": "osm-ga-node-1",
+            "name": "Some Ramp",
+            "coordinates": {"lat": 33.5, "lng": -84.5},
+            "accessibility": "Dock",
+        }
+        norm = b.normalize_dnr_record(sparse, "GA")
+        self.assertIsNotNone(norm)
+        self.assertFalse(norm["amenities"]["camping"])
+        self.assertFalse(norm["amenities"]["baitShop"])
+        self.assertEqual(norm["fees"]["parking"], "Check Locally")
+        self.assertTrue(norm["fishing"]["yearRound"])
+
+    def test_dnr_id_fallback_matches_enrichment_js_slug_format(self):
+        # enrichment.js: `${stateAbbr}-${name.toLowerCase().replace(/[^a-z0-9]+/g,'-')}`
+        record = {"name": "Joe's Pond (North)", "coordinates": {"lat": 1, "lng": 2}}
+        norm = b.normalize_dnr_record(record, "GA")
+        self.assertEqual(norm["dnrId"], "GA-joe-s-pond-north")
+
+    def test_explicit_dnr_id_preserved(self):
+        record = {"dnrId": "ga-marben-pfa", "name": "Marben", "coordinates": {"lat": 1, "lng": 2}}
+        norm = b.normalize_dnr_record(record, "GA")
+        self.assertEqual(norm["dnrId"], "ga-marben-pfa")
 
 
 class DnrMergeTests(unittest.TestCase):
@@ -210,32 +278,73 @@ class DnrMergeTests(unittest.TestCase):
                 "coordinates": {"lat": 34.9, "lng": -83.0}}]
         self.assertIsNone(b.match_dnr_record(spot, dnr))
 
+    def test_match_dnr_records_to_spots_does_not_double_assign(self):
+        # Two different OSM elements near the same PFA (e.g. a slipway node
+        # and a separately-tagged named water body) must not both claim the
+        # same DNR record.
+        spots = [
+            {"name": "Marben Lake Ramp", "coordinates": {"lat": 33.4715, "lng": -83.7185}},
+            {"name": "Marben Lake", "coordinates": {"lat": 33.4717, "lng": -83.7187}},
+        ]
+        dnr = [{"dnrId": "ga-marben-pfa", "name": "Marben Public Fishing Area",
+                "coordinates": {"lat": 33.4716, "lng": -83.7186}}]
+        matches, claimed = b.match_dnr_records_to_spots(spots, dnr)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(claimed, {"ga-marben-pfa"})
+
     def test_merge_dnr_into_spot_unions_species_and_amenities(self):
         spot = {"name": "Marben Lake", "coordinates": {"lat": 33.4715, "lng": -83.7185},
-                "targetSpecies": ["Bass"], "amenities": {"restrooms": False}, "legalStatus": None}
+                "targetSpecies": ["Bass"], "amenities": {"restrooms": False, "parking": False},
+                "legalStatus": None, "wheelchairAccessible": False}
         d = {"dnrId": "ga-marben-pfa", "confirmedSpecies": ["Bass", "Bluegill"],
-             "amenities": {"restrooms": True}}
+             "amenities": {"restrooms": True, "parking": True, "dockADA": True}}
         merged = b.merge_dnr_into_spot(spot, d)
         self.assertEqual(sorted(merged["targetSpecies"]), ["Bass", "Bluegill"])
         self.assertTrue(merged["amenities"]["restrooms"])
+        self.assertTrue(merged["amenities"]["parking"])
+        self.assertTrue(merged["wheelchairAccessible"])
         self.assertEqual(merged["dnr"], d)
         self.assertEqual(merged["legalStatus"], "public")
 
     def test_merge_preserves_explicit_legal_status(self):
         spot = {"name": "X", "coordinates": {"lat": 0, "lng": 0}, "targetSpecies": [],
-                "amenities": {}, "legalStatus": "catch_and_release"}
-        merged = b.merge_dnr_into_spot(spot, {"dnrId": "x"})
+                "amenities": {}, "legalStatus": "catch_and_release", "wheelchairAccessible": False}
+        merged = b.merge_dnr_into_spot(spot, {"dnrId": "x", "amenities": {}})
         self.assertEqual(merged["legalStatus"], "catch_and_release")
 
     def test_dnr_to_standalone_spot_shape(self):
-        d = {"dnrId": "ga-x", "name": "X PFA", "coordinates": {"lat": 1, "lng": 2},
-             "accessibility": "Dock", "confirmedSpecies": ["Crappie"], "county": "Jasper",
-             "amenities": {"restrooms": True, "parking": True}}
+        d = b.normalize_dnr_record({
+            "dnrId": "ga-x", "name": "X PFA", "coordinates": {"lat": 1, "lng": 2},
+            "accessibility": "Dock", "confirmedSpecies": ["Crappie"], "county": "Jasper",
+            "amenities": {"restrooms": True, "parking": True, "dockADA": True},
+            "fees": {"parking": "Free", "fishing": "GA License Required"},
+            "operator": "Georgia DNR", "infoLink": "https://example.com",
+        }, "GA")
         spot = b.dnr_to_standalone_spot(d, "GA", "Georgia")
+        self.assertEqual(spot["id"], "ga-x")
         self.assertEqual(spot["source"], "dnr")
         self.assertEqual(spot["legalStatus"], "public")
+        self.assertIsNone(spot["hours"])
+        self.assertEqual(spot["fee"], "no")  # DNR parking fee "Free" -> no fee
+        self.assertEqual(spot["operator"], "Georgia DNR")
+        self.assertEqual(spot["website"], "https://example.com")
+        self.assertTrue(spot["wheelchairAccessible"])
         self.assertTrue(spot["amenities"]["restrooms"])
+        self.assertTrue(spot["amenities"]["parking"])
+        self.assertEqual(spot["targetSpecies"], ["Crappie"])
+        self.assertEqual(spot["nearbyBait"], [])
         self.assertEqual(spot["region"], "Jasper County, GA")
+
+    def test_dnr_to_standalone_spot_fee_when_not_free(self):
+        d = b.normalize_dnr_record(
+            {"name": "Y", "coordinates": {"lat": 1, "lng": 2}, "fees": {"parking": "$5/day"}}, "GA")
+        spot = b.dnr_to_standalone_spot(d, "GA", "Georgia")
+        self.assertEqual(spot["fee"], "yes")
+
+    def test_dnr_to_standalone_spot_fee_unknown_when_unspecified(self):
+        d = b.normalize_dnr_record({"name": "Z", "coordinates": {"lat": 1, "lng": 2}}, "GA")
+        spot = b.dnr_to_standalone_spot(d, "GA", "Georgia")
+        self.assertIsNone(spot["fee"])
 
 
 class DedupeTests(unittest.TestCase):
@@ -270,7 +379,7 @@ class GeometryTests(unittest.TestCase):
         self.assertAlmostEqual(b.haversine_mi(33.5, -84.5, 33.5, -84.5), 0.0)
 
     def test_haversine_known_distance(self):
-        # Atlanta to Athens, GA is roughly 65-70 miles as the crow flies.
+        # Atlanta to Athens, GA is roughly 55-80 miles as the crow flies.
         d = b.haversine_mi(33.7490, -84.3880, 33.9519, -83.3576)
         self.assertGreater(d, 55)
         self.assertLess(d, 80)

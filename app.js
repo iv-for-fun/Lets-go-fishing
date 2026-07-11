@@ -611,6 +611,7 @@ function renderDetailContent(loc) {
             <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Fishing License</span><span class="font-black text-gray-700">${loc.fees.fishing}</span></div>
             <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Access Type</span><span class="font-black text-gray-700">${loc.accessibility}</span></div>
           </div>
+          ${typeof renderDNRPanel === 'function' ? renderDNRPanel(loc) : ''}
         </div>
 
         <div id="tab-forecast" style="display:none;">
@@ -762,6 +763,43 @@ async function init() {
     const score = calcSuccessScore(loc, spotWeather, moonPhase, childAge, pressureTrend);
     return { ...loc, weather: spotWeather, score, pressureTrend };
   });
+
+  // ── DNR enrichment (guarded, perimeter-scoped) ──────────────────────────
+  // Merge state DNR records that fall within the drive-time search radius:
+  // fuzzy-match to existing Overpass spots, then append unmatched DNR-only
+  // access points as their own cards. Never allowed to break search.
+  try {
+    if (typeof enrichFromDNR === 'function') {
+      const radiusMiles = maxDriveHours * 45;
+      const dnrRecords = await enrichFromDNR(userCoords.lat, userCoords.lng, radiusMiles);
+      if (dnrRecords && dnrRecords.length) {
+        // 1) merge DNR data into any matching Overpass results
+        allResults = allResults.map(loc => {
+          const match = matchDNRRecord(loc, dnrRecords);
+          return match ? mergeDNRIntoLoc(loc, match) : loc;
+        });
+        // 2) append unmatched DNR-only access points within the perimeter
+        const have = new Set(allResults.map(l => (l.name || '').toLowerCase()));
+        const dnrOnly = dnrRecords
+          .filter(d => d.coordinates && !have.has((d.name || '').toLowerCase()))
+          .map(d => {
+            const base = dnrRecordToLoc(d);
+            const distMiles = haversineDistance(userCoords, base.coordinates);
+            return { ...base, distMiles: Math.round(distMiles), estDriveHours: distMiles / 45, weather: originWeather };
+          })
+          .filter(loc => loc.estDriveHours <= maxDriveHours && !(childAge < 6 && loc.accessibility === 'Obstructed Bank'))
+          .map(loc => {
+            const pKey = coordKey(loc.coordinates.lat, loc.coordinates.lng);
+            if (loc.weather && typeof loc.weather.pressureHpa === 'number') recordPressure(pKey, loc.weather.pressureHpa);
+            const pressureTrend = getTrend(pKey);
+            return { ...loc, pressureTrend, score: calcSuccessScore(loc, loc.weather, moonPhase, childAge, pressureTrend) };
+          });
+        if (dnrOnly.length) allResults = allResults.concat(dnrOnly).sort((a, b) => a.distMiles - b.distMiles);
+      }
+    }
+  } catch (err) {
+    console.warn('[DNR] enrichment failed:', err.message);
+  }
 
   showLoading(false);
   renderCards(allResults);

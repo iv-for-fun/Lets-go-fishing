@@ -1,0 +1,5 @@
+{
+  "description": "Manifest of US states with a DNR public-access data file in this directory. The enrichment pipeline only fetches states/{ABBR}.json for states listed here AND within the search perimeter. Add a state's abbr here when you add its {ABBR}.json file.",
+  "schemaVersion": 1,
+  "states": ["GA"]
+}

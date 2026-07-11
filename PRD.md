@@ -110,7 +110,7 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 
 ### 4.6 AI Research Agent (Spot Enrichment) 🔲 Backlog — NOT shipped (reverted)
 
-> **Status (v1.4):** Partially rebuilt. The v1.3 attempt was never functional — `enrichment.js` was never committed and the call sites broke the live site, so the work was reverted. Rebuild is tracked in **issue #33**. **The iNaturalist "Community Fish Sightings" panel (§4.6 step 2) has since been re-implemented** directly in `app.js` (`fetchINatSightings` + `loadAndRenderINatPanel`), fully guarded with a graceful fallback. DNR enrichment (step 1) and LLM summarization (step 3) remain backlog. The design below is retained as the target spec.
+> **Status (v1.4):** Substantially rebuilt. The v1.3 attempt was never functional — `enrichment.js` was never committed and the call sites broke the live site, so it was reverted. Rebuild is tracked in **issue #33**. Now shipped: **(2) the iNaturalist "Community Fish Sightings" panel** (in `app.js`), and **(1) DNR enrichment** — `enrichment.js` now exists and implements a **perimeter-scoped** loader: it uses `data/us-states-borders.geojson` to determine which states the drive-time search circle actually touches, then fetches only those states' `data/dnr/{ABBR}.json` files and coalesces them (so a 50-state dataset never loads in full). GA ships with sample records; other states are added by dropping in a file + manifest entry. **Only (3) LLM summarization remains backlog** (tied to the API-key decision). Real authoritative DNR data for all states is still needed (#13). The design below is the target spec.
 
 When a user opens a spot's detail view, a lightweight client-side research pipeline runs asynchronously to enrich the spot's data with real-world information. All logic would live in `enrichment.js`.
 
@@ -303,11 +303,15 @@ lets-go-fishing/
 ├── index.html          ← SPA shell, nav, views, forecast/map logic + inline UI script
 ├── app.js              ← search, location resolution, scoring pipeline, cache, UI rendering
 ├── scorer.js           ← Success Score algorithm, moon phase, pressure trend
+├── enrichment.js       ← iNat sightings + perimeter-scoped DNR enrichment (§4.6)
 ├── config.js           ← API keys (OpenWeatherMap); committed so the client-side build works
 ├── config.example.js   ← Template (committed)
 ├── data/
-│   └── locations.json  ← Curated spot dataset (not currently used as a runtime fallback)
-│                          (enrichment.js — AI Research Agent — is NOT present; see §4.6 / issue #33)
+│   ├── locations.json          ← Curated spot dataset (not currently used as a runtime fallback)
+│   ├── us-states-borders.geojson ← State polygons; used to scope DNR loading to the perimeter
+│   └── dnr/
+│       ├── index.json          ← Manifest: which states have DNR data files
+│       └── {ABBR}.json         ← Per-state DNR public-access records (GA seeded with samples)
 └── .github/
     └── workflows/      ← GitHub Pages deployment
 ```
@@ -343,8 +347,8 @@ lets-go-fishing/
 | 9 | Saved spots (localStorage) | ✅ Shipped | |
 | 10 | Leaflet map view | ✅ Shipped | |
 | 11 | Nominatim geocoding | ✅ Shipped | |
-| 12 | AI Research Agent (DNR + iNat + LLM) | 🟡 Partial | iNat sightings panel rebuilt in `app.js` (v1.4); DNR + LLM still backlog. Rebuild tracked in issue #33 |
-| 13 | GA DNR confirmed species data file | 🔲 Backlog | Populate `data/dnr-access-points.json` with real GA DNR records |
+| 12 | AI Research Agent (DNR + iNat + LLM) | 🟡 Partial | iNat panel + perimeter-scoped DNR enrichment shipped in `enrichment.js`/`app.js` (v1.4); only LLM summary still backlog. Tracked in issue #33 |
+| 13 | Real DNR data per state | 🔲 Backlog | Infra ready: add `data/dnr/{ABBR}.json` + a manifest entry per state. GA has sample data; replace with authoritative records and expand states |
 | 14 | PWA / offline support | 🔲 Backlog | Service worker + manifest |
 | 15 | User-submitted fish reports | 🔲 Backlog | Requires backend |
 | 16 | Push notifications (tidal/weather alerts) | 🔲 Backlog | |

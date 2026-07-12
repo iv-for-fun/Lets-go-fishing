@@ -1,6 +1,8 @@
 # Product Requirements Document (PRD)
 ## Lets-Go-Fishing — Kid-Friendly Fishing Spot Finder
-**Version:** 1.5 | **Updated:** July 11, 2026 | **Owner:** iv-for-fun
+**Version:** 1.6 | **Updated:** July 12, 2026 | **Owner:** iv-for-fun
+
+> **v1.6 Change Log:** Phase 2 of the pre-built, perimeter-scoped data re-architecture (epic #39) shipped: a new `spots-loader.js` replaces the live per-search Overpass call with the pre-built `data/spots/{ABBR}.json` files from Phase 1 (issue #35), scoped to the drive-time perimeter and cached in **IndexedDB** (6hr TTL). Live Overpass now runs only as a fallback for a state with no pre-built file yet (tracking: issue #36). The live in-browser DNR fetch/match/merge code (`enrichFromDNR`, `matchDNRRecord`, `mergeDNRIntoLoc`, `dnrRecordToLoc`, `normalizeDNRRecord`) was removed from `enrichment.js` — that merge now happens once at build time (Phase 1); `enrichment.js` keeps only the perimeter-geometry helpers (now shared with `spots-loader.js`) and `renderDNRPanel()`. Updated Technical Stack (§3), AI Research Agent status (§4.6), Caching Strategy (§7), Non-Functional Requirements (§13), file structure (§12), and backlog (§14, row 18).
 
 > **v1.5 Change Log:** Phase 1 of the pre-built, perimeter-scoped data re-architecture (epic #39) shipped: `tools/build_spots_data.py` + the **Generate Spots Data** workflow build merged `data/spots/{ABBR}.json` (SE region by default — GA, AL, SC, TN, NC) from OpenStreetMap (broadened tag set, amenity/bait/food proximity join) fuzzy-merged with curated `data/dnr/{ABBR}.json` records (tracking: issue #35). **Build-time only — the live app does not read `data/spots/` yet**; runtime remains live Overpass as described elsewhere in this doc until Phase 2 (issue #36) ships. Updated file structure (§12) and backlog (§14, row 18).
 
@@ -46,14 +48,14 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 |---|---|---|
 | Markup | HTML5 | Single-page app (`index.html`) |
 | Styling | Tailwind CSS (CDN, mobile-first) | |
-| Logic | Vanilla JavaScript (ES6+) | `app.js`, `scorer.js`, `enrichment.js`, `config.js` |
+| Logic | Vanilla JavaScript (ES6+) | `app.js`, `scorer.js`, `enrichment.js`, `spots-loader.js`, `config.js` |
 | Hosting | GitHub Pages (static, client-side only) | |
-| Caching | `localStorage` with 6-hour TTL | Keyed by location + date |
+| Caching | `localStorage` (6hr TTL, weather) + `IndexedDB` (6hr TTL, pre-built spot data) | Keyed by location + date (weather) / state abbr (spots) |
 | Location | Browser Geolocation API + Nominatim (OSM) geocoding fallback | Replaces Google Places Autocomplete |
 | Maps | Leaflet.js + OpenStreetMap tiles | Replaces MapBox API |
 | Distance | Haversine formula ÷ avg 45 mph estimate | Replaces Distance Matrix API |
-| Spot Data | Overpass API (OpenStreetMap) — live fetch only | Shows a "couldn't find any fishing spots" message when the query returns nothing (no static fallback as of v1.4) |
-| Spot Enrichment | *(Not implemented — reverted; see §4.6 / issue #33)* | — |
+| Spot Data | Pre-built, per-state `data/spots/{ABBR}.json` (OSM + DNR merged monthly at build time), loaded per drive-time perimeter via `spots-loader.js` (issue #36) | Live Overpass API fallback only for a perimeter state with no pre-built file yet; shows a "couldn't find any fishing spots" message when nothing is found either way |
+| Spot Enrichment | DNR merge baked in at build time (`tools/build_spots_data.py`, issue #35); `enrichment.js` renders the DNR panel from the pre-built `dnr` sub-object. iNaturalist sightings remain live (§4.6) | LLM summarization still backlog — see §4.6 |
 | Weather | OpenWeatherMap API (key in `config.js`) | Graceful mock fallback if no key |
 | Moon Phase | Client-side math (no API call) | Epoch-based calculation |
 | Pressure Trend | `localStorage` rolling 3-reading store | Computed in `scorer.js` via `getTrend()` |
@@ -78,7 +80,7 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
   - **Success Score** (0–100) as a color-coded badge (🟢 70+, 🟡 40–69, 🔴 <40).
   - Species tags (up to 2 shown + overflow count).
   - **Quick-glance tags** (see §4.2.1).
-  - Live badge if data sourced from OSM.
+  - "Live" badge only when a spot came from the live-Overpass fallback path this search (`source === 'osm-live'`) — pre-built OSM/DNR spots (the normal case) don't carry it, since they're refreshed monthly, not fetched live.
   - Bookmark icon to save/unsave.
 
 #### 4.2.1 Quick-Glance Tags
@@ -112,25 +114,25 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 
 ### 4.6 AI Research Agent (Spot Enrichment) 🔲 Backlog — NOT shipped (reverted)
 
-> **Status (v1.4):** Substantially rebuilt. The v1.3 attempt was never functional — `enrichment.js` was never committed and the call sites broke the live site, so it was reverted. Rebuild is tracked in **issue #33**. Now shipped: **(2) the iNaturalist "Community Fish Sightings" panel** (in `app.js`), and **(1) DNR enrichment** — `enrichment.js` now exists and implements a **perimeter-scoped** loader: it uses `data/us-states-borders.geojson` to determine which states the drive-time search circle actually touches, then fetches only those states' `data/dnr/{ABBR}.json` files and coalesces them (so a 50-state dataset never loads in full). GA ships with sample records; other states are added by dropping in a file + manifest entry. **Only (3) LLM summarization remains backlog** (tied to the API-key decision). Real authoritative DNR data for all states is still needed (tracked in #33). The design below is the target spec.
+> **Status (v1.6):** DNR merging is now **build-time only**. Through v1.5, `enrichment.js` fetched and fuzzy-matched DNR records into search results live, per request. Phase 2 of the data re-architecture (issue #36) removed that live fetch/match/merge code entirely — the same matching rules (name similarity + ≤3km proximity, described below) now run once a month in `tools/build_spots_data.py` (Phase 1, issue #35), and the merged result ships pre-baked in `data/spots/{ABBR}.json`'s `dnr` sub-object. `enrichment.js` today only (a) provides the perimeter-geometry helpers (`statesInPerimeter()`, now shared with `spots-loader.js` to scope which `data/spots/{ABBR}.json` files to fetch) and (b) renders the **DNR Info panel** (`renderDNRPanel(loc)`) from whatever `loc.dnr` object it's handed — it no longer knows or cares whether that came from a build-time merge or (hypothetically) a live one. **(2) iNaturalist "Community Fish Sightings"** remains live, unaffected (`app.js`). **Only (3) LLM summarization remains backlog** (tied to the API-key decision). Real authoritative DNR data for all states is still needed (tracked in #33).
 
-When a user opens a spot's detail view, a lightweight client-side research pipeline runs asynchronously to enrich the spot's data with real-world information. All logic would live in `enrichment.js`.
+When a user opens a spot's detail view, live enrichment (today: iNaturalist sightings) runs asynchronously to add real-world information the pre-built data can't carry (recent activity). DNR/species/amenity enrichment, by contrast, is already merged into the spot record by the time it reaches the browser.
 
 #### Pipeline Overview
 
 | Step | Source | Function | Notes |
 |---|---|---|---|
-| 1 | **Georgia DNR** public access JSON | `enrichFromDNR()` | Merges DNR amenity/species records during `init()`; adds DNR-only spots |
-| 2 | **iNaturalist API** | `enrichSpotWithINat()` | Fetches recent verifiable fish observations within 10 km radius; free, no key |
+| 1 | **State DNR** curated JSON | `tools/build_spots_data.py` (build time) | Fuzzy-merges DNR amenity/species records into `data/spots/{ABBR}.json` monthly; adds DNR-only spots (`source: "dnr"`). No longer a runtime call — see issue #36. |
+| 2 | **iNaturalist API** | `fetchINatSightings()` (`app.js`) | Fetches recent verifiable fish observations within 10 km radius; free, no key; still live, on detail-view open |
 | 3 | **LLM Summary** *(optional)* | `summarizeWithAI()` | Sends enriched data to OpenAI `gpt-4o-mini` or Gemini Flash to generate a friendly 2–3 sentence "What to Expect" blurb; requires `OPENAI_API_KEY` or `GEMINI_API_KEY` |
 
-#### DNR Enrichment (`enrichFromDNR`)
-- Loads Georgia DNR public fishing access points from a bundled/proxied JSON source.
-- Normalizes records via `normalizeDNRRecord()` into a standard shape with `dnrId`, `waterbody`, `county`, `acres`, `amenities` (restrooms, ADA, parking, camping, bait shop, loan poles, kids programs), `confirmedSpecies`, `fees`, and `fishing` details.
-- `matchDNRRecord(loc, dnrSpots)` fuzzy-matches on name similarity and geographic proximity (≤3 km) to merge DNR data into existing Overpass results.
-- `mergeDNRIntoLoc(loc, match)` enriches matched spots with confirmed species, official fees, and DNR amenity flags.
-- Unmatched DNR spots within drive time are appended to `allResults` as `source: "dnr"`.
-- A **DNR Info panel** (`renderDNRPanel(loc)`) renders on the Amenities tab when `loc.dnr` is present, showing official waterbody stats, ADA accessibility, amenity icons, and a deep link to the DNR website.
+#### DNR Merge (build time, `tools/build_spots_data.py`)
+- Loads curated `data/dnr/{ABBR}.json` public fishing access points.
+- Normalizes records into a standard shape with `dnrId`, `waterbody`, `county`, `acres`, `amenities` (restrooms, ADA, parking, camping, bait shop, loan poles, kids programs), `confirmedSpecies`, `fees`, and `fishing` details.
+- Fuzzy-matches on name similarity and geographic proximity (≤3 km) to merge DNR data into OSM-derived spots for the same state.
+- Merged spots get confirmed species, official fees, and DNR amenity flags folded in.
+- Unmatched DNR spots within the state are written into `data/spots/{ABBR}.json` as their own records with `source: "dnr"`.
+- At runtime, a **DNR Info panel** (`renderDNRPanel(loc)`, `enrichment.js`) renders on the Amenities tab whenever `loc.dnr` is present (regardless of whether the spot's own `source` is `"osm"` or `"dnr"`), showing official waterbody stats, ADA accessibility, amenity icons, and a deep link to the DNR website.
 
 #### iNaturalist Sightings (`enrichSpotWithINat`)
 - Queries `https://api.inaturalist.org/v1/observations` filtered to `iconic_taxa=Actinopterygii` (fish), within 10 km, within the last 60 days.
@@ -146,7 +148,7 @@ When a user opens a spot's detail view, a lightweight client-side research pipel
 - Output replaces the static "What to Expect" placeholder with a dynamic, friendly summary.
 
 #### Caching
-- DNR data: fetched once per session, held in `_dnrCache`.
+- DNR data: pre-merged at build time into `data/spots/{ABBR}.json`; no runtime DNR cache needed anymore (see §7 for how the merged spot files themselves are cached).
 - iNat data: held in `_inatCache` keyed by spot ID (in-memory only, not `localStorage`).
 - LLM summary: held in `_researchCache` keyed by spot ID (in-memory only).
 
@@ -203,8 +205,9 @@ if ((Date.now() / 1000) - cacheTimestamp > CACHE_TTL) {
   loadFromCache();
 }
 ```
-All API responses stored in `localStorage` keyed by location + date. Cache invalidated after 6 hours.
-Every explicit **Find Spots** click calls `bustCacheForCoords()` to force fresh weather and spot data for the resolved coordinates — ensuring detail-view data always reflects the latest search.
+Weather API responses are stored in `localStorage` keyed by location + date; every explicit **Find Spots** click calls `bustCacheForCoords()` to force fresh weather for the resolved coordinates.
+
+**Spot data is cached differently** (issue #36): the pre-built `data/spots/{ABBR}.json` files change monthly, not per-request, so they're intentionally *not* busted on every click. `spots-loader.js` caches each fetched state's normalized spots in **IndexedDB** (`letsGoFishingCache` DB, `stateSpots` store, keyed by state abbr) with the same 6-hour TTL, so a repeat search for the same area hits IndexedDB instead of re-fetching. Only the live-Overpass fallback path (for a perimeter state with no pre-built file yet) uses the per-click-busted `localStorage` `spots_{coordKey}` cache from `fetchFishingSpotsNearby()`.
 
 ---
 
@@ -232,7 +235,7 @@ Every explicit **Find Spots** click calls `bustCacheForCoords()` to force fresh 
 }
 ```
 
-> `source` is `"osm"` for live Overpass results; `"dnr"` for Georgia DNR-only spots; omitted or `"static"` for curated fallback spots.
+> `source` is `"osm"` for pre-built OSM-derived spots (`data/spots/{ABBR}.json`, the normal case, refreshed monthly — see §3, §7); `"osm-live"` specifically for spots fetched via the live-Overpass fallback this search (only used when a perimeter state has no pre-built file yet, so the "Live" badge is accurate); `"dnr"` for state-DNR-only spots (now written into `data/spots/{ABBR}.json` at build time, not merged live); omitted or `"static"` for curated fallback spots (currently unused, see backlog row 8).
 
 **Extended DNR sub-object** (present when `source === "dnr"` or DNR match found):
 
@@ -276,7 +279,7 @@ Species matched in priority order against `targetSpecies` array; falls back to `
 - Font size minimum: **16px** for body text (prevents iOS auto-zoom on inputs)
 - Bottom nav bar: **Explore | Map | Saved**
 - Color system: forest green `#2D6A4F`, sky blue `#48CAE4`, sand `#F4E285`
-- Status banners for: GPS denial, missing weather API key, data source (Live OSM vs. Static), and active location display
+- Status banners for: GPS denial, missing weather API key, data source (pre-built OSM+DNR database vs. live-Overpass fallback), and active location display
 
 ---
 
@@ -305,16 +308,17 @@ lets-go-fishing/
 ├── index.html          ← SPA shell, nav, views, forecast/map logic + inline UI script
 ├── app.js              ← search, location resolution, scoring pipeline, cache, UI rendering
 ├── scorer.js           ← Success Score algorithm, moon phase, pressure trend
-├── enrichment.js       ← iNat sightings + perimeter-scoped DNR enrichment (§4.6)
+├── enrichment.js       ← perimeter-geometry helpers (statesInPerimeter, shared with spots-loader.js) + DNR info panel (§4.6)
+├── spots-loader.js     ← loads pre-built data/spots/{ABBR}.json per drive-time perimeter, IndexedDB-cached (§7); live-Overpass fallback (issue #36)
 ├── config.js           ← API keys (OpenWeatherMap); committed so the client-side build works
 ├── config.example.js   ← Template (committed)
 ├── data/
 │   ├── locations.json          ← Curated spot dataset (not currently used as a runtime fallback)
-│   ├── us-states-borders.geojson ← State polygons; used to scope DNR/spots loading to the perimeter
+│   ├── us-states-borders.geojson ← State polygons; used to scope spots loading to the perimeter
 │   ├── dnr/
 │   │   ├── index.json          ← Manifest: which states have DNR data files (regenerated)
-│   │   └── {ABBR}.json         ← Per-state DNR public-access records (GA curated; others generated)
-│   └── spots/                  ← Merged OSM+DNR spot data (see docs/MIGRATION_PLAN.md); build-only, not yet loaded by the app (issue #36)
+│   │   └── {ABBR}.json         ← Per-state DNR public-access records (GA curated; others generated); build-time input only
+│   └── spots/                  ← Merged OSM+DNR spot data (see docs/MIGRATION_PLAN.md); this is what the app actually loads (issue #36)
 │       ├── index.json          ← Manifest: which states have a built spots file
 │       └── {ABBR}.json         ← Per-state merged fishing spots (OSM + DNR + amenity/bait proximity)
 ├── tools/
@@ -327,7 +331,7 @@ lets-go-fishing/
 
 **Populating DNR data for all states:** run the **Generate DNR Data** workflow (Actions tab → `workflow_dispatch`). It runs `tools/build_dnr_data.py` on GitHub (where Overpass is reachable), which builds a per-state file of real OpenStreetMap boat-ramp / fishing-access points for every state, filtered to each state's polygon, and rebuilds the manifest. Files marked `"curated": true` (e.g. `GA.json`) are never overwritten, so authoritative per-state data always wins over the OSM baseline. OSM source is community data, not official DNR records — labelled as such in each generated file.
 
-**Populating merged spot data (data/spots/):** run the **Generate Spots Data** workflow (Actions tab → `workflow_dispatch`). It runs `tools/build_spots_data.py` on GitHub (where Overpass is reachable), which fetches a broadened OSM fishing-spot tag set + amenity/bait/food nodes per state, spatial-joins amenities to spots in code, fuzzy-merges in curated `data/dnr/{ABBR}.json` records, and writes `data/spots/{ABBR}.json` + rebuilds the manifest. Defaults to the Southeast region (GA, AL, SC, TN, NC); pass explicit state abbreviations to build others. This is Phase 1 of the re-architecture in `docs/MIGRATION_PLAN.md` (epic #39) — the app does not read `data/spots/` yet (Phase 2, issue #36).
+**Populating merged spot data (data/spots/):** run the **Generate Spots Data** workflow (Actions tab → `workflow_dispatch`). It runs `tools/build_spots_data.py` on GitHub (where Overpass is reachable), which fetches a broadened OSM fishing-spot tag set + amenity/bait/food nodes per state, spatial-joins amenities to spots in code, fuzzy-merges in curated `data/dnr/{ABBR}.json` records, and writes `data/spots/{ABBR}.json` + rebuilds the manifest. Defaults to the Southeast region (GA, AL, SC, TN, NC); pass explicit state abbreviations to build others. This is Phase 1 of the re-architecture in `docs/MIGRATION_PLAN.md` (epic #39); the app has read `data/spots/` at runtime since Phase 2 (issue #36) shipped in v1.6.
 
 ---
 
@@ -336,11 +340,11 @@ lets-go-fishing/
 | Requirement | Target |
 |---|---|
 | Initial load time | < 3 seconds on 4G |
-| Overpass API timeout | 25 seconds (hard limit in query) |
+| Overpass API timeout | 25 seconds (hard limit in query); only invoked as the live-fallback path (issue #36) |
 | Weather API timeout | Graceful fallback within 5 seconds |
 | iNaturalist API timeout | 8 seconds; graceful fallback to empty panel |
-| DNR enrichment timeout | 10 seconds; silent fail if unavailable |
-| Cache hit rate | > 80% for repeated same-area searches within 6 hours |
+| Pre-built spots fetch | No explicit timeout; any failure (network, missing file) falls back to live Overpass for that search |
+| Cache hit rate | > 80% for repeated same-area searches within 6 hours (IndexedDB for spot data, localStorage for weather) |
 | Accessibility | WCAG AA touch targets (44×44px), 16px minimum body font |
 
 ---
@@ -350,7 +354,7 @@ lets-go-fishing/
 | # | Feature | Status | Notes |
 |---|---|---|---|
 | 1 | Core SPA shell + bottom nav | ✅ Shipped | |
-| 2 | Overpass API live spot fetch | ✅ Shipped | |
+| 2 | Overpass API live spot fetch | ✅ Shipped | Now the fallback path only (issue #36) — primary source is pre-built `data/spots/{ABBR}.json` (row 18) |
 | 3 | Success Score algorithm | ✅ Shipped | |
 | 4 | Weather integration (OWM) | ✅ Shipped | |
 | 5 | Quick-glance tags | ✅ Shipped | |
@@ -360,10 +364,10 @@ lets-go-fishing/
 | 9 | Saved spots (localStorage) | ✅ Shipped | |
 | 10 | Leaflet map view | ✅ Shipped | |
 | 11 | Nominatim geocoding | ✅ Shipped | |
-| 12 | AI Research Agent (DNR + iNat + LLM) | 🟡 Partial | iNat panel + perimeter-scoped DNR enrichment shipped in `enrichment.js`/`app.js` (v1.4); only LLM summary still backlog. Tracked in issue #33 |
+| 12 | AI Research Agent (DNR + iNat + LLM) | 🟡 Partial | iNat panel live (`app.js`); DNR merge moved from a live per-request match (v1.4) to a build-time merge (`tools/build_spots_data.py`, v1.6) — `enrichment.js` now only renders the DNR panel. Only LLM summary still backlog. Tracked in issue #33 |
 | 13 | Real DNR data per state | 🟡 Partial | Pipeline shipped: `tools/build_dnr_data.py` + `generate-dnr-data.yml` build all states from OpenStreetMap on demand. Replace OSM baseline with authoritative state-agency data per state (drop in a `"curated": true` file) as it's sourced |
 | 14 | PWA / offline support | 🔲 Backlog | Service worker + manifest |
 | 15 | User-submitted fish reports | 🔲 Backlog | Requires backend |
 | 16 | Push notifications (tidal/weather alerts) | 🔲 Backlog | |
 | 17 | Multi-state DNR expansion | 🔲 Backlog | Start with GA, expand to SC/TN/AL/FL |
-| 18 | Pre-built, perimeter-scoped spot data (epic #39) | 🟡 Partial | **Phase 1 shipped (issue #35):** `tools/build_spots_data.py` + `generate-spots-data.yml` build merged `data/spots/{ABBR}.json` (SE region) from OSM + DNR; build-only, not yet read by the app. Remaining: Phase 2 runtime swap (#36), Phase 3 card/detail UI (#37), Phase 4 scale (#38) |
+| 18 | Pre-built, perimeter-scoped spot data (epic #39) | 🟡 Partial | **Phase 1 shipped (issue #35):** `tools/build_spots_data.py` + `generate-spots-data.yml` build merged `data/spots/{ABBR}.json` (SE region) from OSM + DNR. **Phase 2 shipped (issue #36):** `spots-loader.js` loads those files per drive-time perimeter, IndexedDB-cached; live Overpass demoted to fallback-only; live in-browser DNR merge removed. Remaining: Phase 3 card/detail UI (#37 — catch-&-release badge, hours, real amenities, bait, accessibility advisory), Phase 4 scale (#38) |

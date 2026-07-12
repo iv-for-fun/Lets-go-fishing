@@ -1,25 +1,27 @@
-// enrichment.js — Spot enrichment pipeline (AI Research Agent, issue #33)
+// enrichment.js — perimeter geometry helpers + DNR info panel
 // ---------------------------------------------------------------------------
-// Currently implemented: Georgia DNR-style state enrichment with perimeter-
-// scoped loading. On each search we determine which US states the drive-time
-// search circle actually touches (via data/us-states-borders.geojson), then
-// fetch ONLY those states' DNR files (data/dnr/{ABBR}.json) and coalesce them.
-// A 50-state dataset therefore never loads in full — only what's near the user.
+// Historically this module also fetched and fuzzy-matched DNR records into
+// live Overpass results at request time (issue #33's AI Research Agent). As
+// of Phase 2 of the data re-architecture (issue #36), that merge now happens
+// once at build time (tools/build_spots_data.py, issue #35) and is baked
+// directly into data/spots/{ABBR}.json, so the live match/merge/loader code
+// was removed here — see git history if it's ever needed again.
 //
-// Everything here is defensively guarded: a missing borders file, missing
-// manifest, missing state file, or a malformed record must never throw into
-// the search pipeline. app.js also calls every entry point behind a
-// `typeof fn === 'function'` guard, so the whole module is optional.
+// What remains:
+//   - Perimeter geometry helpers + statesInPerimeter(): determine which US
+//     states a drive-time search circle touches (via
+//     data/us-states-borders.geojson). Reused by spots-loader.js (Phase 2) to
+//     scope which pre-built data/spots/{ABBR}.json files to fetch.
+//   - renderDNRPanel(): renders the Amenities-tab DNR info panel from a
+//     loc.dnr object — now populated by the pre-built merge instead of a live
+//     match, but in the same shape, so this keeps working unchanged.
 //
-// Loaded via <script src="enrichment.js"> BEFORE app.js.
+// Loaded via <script src="enrichment.js"> BEFORE spots-loader.js/app.js.
 
-const DNR_DIR          = './data/dnr';
 const STATE_BORDERS_URL = './data/us-states-borders.geojson';
 
-// In-memory session caches (per PRD §4.6 caching notes)
+// In-memory session cache (per PRD §4.6 caching notes)
 let _bordersCache  = null;   // parsed GeoJSON FeatureCollection
-let _manifestCache = null;   // { states: ["GA", ...] }
-const _dnrStateCache = {};   // abbr -> normalized records array
 
 // ---------------------------------------------------------------------------
 // Geometry helpers (self-contained so enrichment.js doesn't depend on app.js
@@ -144,163 +146,6 @@ function _statesInPerimeter(borders, lat, lng, radiusMiles) {
 async function statesInPerimeter(lat, lng, radiusMiles) {
   const borders = await _loadStateBorders();
   return _statesInPerimeter(borders, lat, lng, radiusMiles);
-}
-
-// ---------------------------------------------------------------------------
-// DNR data loading (manifest-driven so we never fire 404s for states with no
-// data file).
-// ---------------------------------------------------------------------------
-async function _loadDNRManifest() {
-  if (_manifestCache !== null) return _manifestCache;
-  try {
-    const res = await fetch(`${DNR_DIR}/index.json`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    _manifestCache = { states: Array.isArray(json.states) ? json.states : [] };
-  } catch (err) {
-    console.warn('[DNR] manifest unavailable:', err.message);
-    _manifestCache = { states: [] };
-  }
-  return _manifestCache;
-}
-
-async function _loadDNRForState(abbr) {
-  if (_dnrStateCache[abbr]) return _dnrStateCache[abbr];
-  try {
-    const res = await fetch(`${DNR_DIR}/${abbr}.json`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    const raw = Array.isArray(json.records) ? json.records : [];
-    _dnrStateCache[abbr] = raw.map(r => normalizeDNRRecord(r, abbr)).filter(Boolean);
-  } catch (err) {
-    console.warn(`[DNR] ${abbr} data unavailable:`, err.message);
-    _dnrStateCache[abbr] = [];
-  }
-  return _dnrStateCache[abbr];
-}
-
-// Normalize a raw DNR record into the standard shape, filling defaults so
-// downstream code can rely on every field existing.
-function normalizeDNRRecord(r, stateAbbr) {
-  if (!r || !r.coordinates || typeof r.coordinates.lat !== 'number' || typeof r.coordinates.lng !== 'number') return null;
-  const a = r.amenities || {};
-  return {
-    dnrId: r.dnrId || `${stateAbbr}-${(r.name || 'spot').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-    name: r.name || 'DNR Public Access',
-    state: stateAbbr,
-    waterbody: r.waterbody || r.name || '',
-    county: r.county || '',
-    acres: r.acres || null,
-    status: r.status || 'Public',
-    operator: r.operator || '',
-    phone: r.phone || '',
-    coordinates: { lat: r.coordinates.lat, lng: r.coordinates.lng },
-    accessibility: r.accessibility || 'Clear Bank',
-    rampType: r.rampType || '',
-    numLanes: r.numLanes || null,
-    amenities: {
-      restrooms: !!a.restrooms, restroomsADA: !!a.restroomsADA,
-      parking: !!a.parking, parkingADA: !!a.parkingADA, dockADA: !!a.dockADA,
-      camping: !!a.camping, baitShop: !!a.baitShop, equipmentRental: !!a.equipmentRental,
-      loanPole: !!a.loanPole, kidsProgram: !!a.kidsProgram, picnicArea: !!a.picnicArea
-    },
-    confirmedSpecies: Array.isArray(r.confirmedSpecies) ? r.confirmedSpecies : [],
-    fees: r.fees || { parking: 'Check Locally', fishing: 'License May Be Required' },
-    fishing: {
-      motorRestrictions: (r.fishing && r.fishing.motorRestrictions) || 'None listed',
-      yearRound: !(r.fishing && r.fishing.yearRound === false),
-      bankFishing: !(r.fishing && r.fishing.bankFishing === false),
-      pier: !!(r.fishing && r.fishing.pier)
-    },
-    moreInfo: r.moreInfo || '',
-    infoLink: r.infoLink || ''
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Entry point: coalesce DNR records for every state within the drive-time
-// perimeter. Returns a flat array of normalized records (possibly empty).
-// ---------------------------------------------------------------------------
-async function enrichFromDNR(lat, lng, radiusMiles) {
-  try {
-    const states = await statesInPerimeter(lat, lng, radiusMiles);
-    if (!states.length) return [];
-    const manifest = await _loadDNRManifest();
-    const wanted = states.filter(s => manifest.states.indexOf(s) >= 0);
-    if (!wanted.length) return [];
-    const perState = await Promise.all(wanted.map(_loadDNRForState));
-    return perState.reduce((acc, recs) => acc.concat(recs || []), []);
-  } catch (err) {
-    console.warn('[DNR] enrichFromDNR failed:', err.message);
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Matching / merging DNR records into Overpass results
-// ---------------------------------------------------------------------------
-const _DNR_STOP_WORDS = { lake: 1, park: 1, area: 1, pfa: 1, wma: 1, public: 1, fishing: 1, the: 1, at: 1, of: 1, state: 1, county: 1, creek: 1, pond: 1 };
-
-function _nameTokens(name) {
-  return (name || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
-    .filter(t => t && !_DNR_STOP_WORDS[t]);
-}
-
-// Jaccard similarity on significant tokens.
-function _nameSimilarity(a, b) {
-  const ta = _nameTokens(a), tb = _nameTokens(b);
-  if (!ta.length || !tb.length) return 0;
-  const setB = new Set(tb);
-  let inter = 0;
-  for (const t of new Set(ta)) if (setB.has(t)) inter++;
-  const union = new Set([...ta, ...tb]).size;
-  return union ? inter / union : 0;
-}
-
-// Best DNR record for an Overpass loc: within ~3 km AND name-similar.
-function matchDNRRecord(loc, dnrRecords) {
-  if (!loc || !loc.coordinates || !Array.isArray(dnrRecords)) return null;
-  let best = null, bestSim = 0;
-  for (const d of dnrRecords) {
-    if (!d.coordinates) continue;
-    if (_dnrHaversineMiles(loc.coordinates.lat, loc.coordinates.lng, d.coordinates.lat, d.coordinates.lng) > 1.864) continue; // ~3 km
-    const sim = _nameSimilarity(loc.name, d.name);
-    if (sim >= 0.5 && sim > bestSim) { best = d; bestSim = sim; }
-  }
-  return best;
-}
-
-// Merge a matched DNR record into an existing Overpass loc.
-function mergeDNRIntoLoc(loc, d) {
-  const species = Array.isArray(loc.targetSpecies) ? loc.targetSpecies.slice() : [];
-  (d.confirmedSpecies || []).forEach(s => { if (species.indexOf(s) < 0) species.push(s); });
-  const amenities = Object.assign({}, loc.amenities, {
-    restrooms: (loc.amenities && loc.amenities.restrooms) || d.amenities.restrooms,
-    picnicTables: (loc.amenities && loc.amenities.picnicTables) || d.amenities.picnicArea
-  });
-  return Object.assign({}, loc, { targetSpecies: species, amenities: amenities, fees: d.fees || loc.fees, dnr: d });
-}
-
-// Convert a standalone DNR record into a loc object the rest of the app renders.
-// Caller (app.js) adds distMiles/estDriveHours/weather/score.
-function dnrRecordToLoc(d) {
-  return {
-    id: d.dnrId,
-    name: d.name,
-    coordinates: d.coordinates,
-    accessibility: d.accessibility || 'Clear Bank',
-    amenities: {
-      restrooms: !!d.amenities.restrooms,
-      playground: false,
-      picnicTables: !!d.amenities.picnicArea,
-      shadedArea: false
-    },
-    targetSpecies: (d.confirmedSpecies && d.confirmedSpecies.length) ? d.confirmedSpecies.slice() : ['Bass', 'Bluegill', 'Catfish'],
-    fees: d.fees || { parking: 'Check Locally', fishing: 'License May Be Required' },
-    region: d.county ? `${d.county} County, ${d.state}` : (d.state || 'DNR'),
-    source: 'dnr',
-    dnr: d
-  };
 }
 
 // ---------------------------------------------------------------------------

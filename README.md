@@ -35,8 +35,8 @@ A mobile-first web app that helps parents find the **best kid-friendly fishing s
 | Drive Time | Haversine formula (client-side, no key required) |
 | Weather & Pressure | [OpenWeatherMap API](https://openweathermap.org/api) (key in `config.js`; graceful mock fallback if absent) |
 | Moon Phases | Computed client-side (astronomical formula) |
-| Fishing Spots | Overpass API (OpenStreetMap) live query; shows a "couldn't find any fishing spots" message when none are returned |
-| Caching | `localStorage` (6-hour TTL) |
+| Fishing Spots | Pre-built, per-state OpenStreetMap + DNR data (`data/spots/{ABBR}.json`, refreshed monthly), loaded per drive-time perimeter; live Overpass query only as a fallback for a state with no pre-built file yet; shows a "couldn't find any fishing spots" message when none are returned |
+| Caching | `localStorage` (6-hour TTL, weather); `IndexedDB` (6-hour TTL, pre-built spot data) |
 
 ---
 
@@ -73,14 +73,22 @@ Lets-go-fishing/
 ├── index.html            # SPA shell, nav, views, map/forecast logic + inline UI script
 ├── app.js                # Search, location resolution, scoring pipeline, cache, card/detail rendering
 ├── scorer.js             # Success Score algorithm, moon phase, pressure trend
+├── enrichment.js         # Perimeter geometry helpers (statesInPerimeter) + DNR info panel
+├── spots-loader.js       # Loads pre-built data/spots/{ABBR}.json per drive-time perimeter, IndexedDB-cached
 ├── config.js             # API keys (OpenWeatherMap); committed for the client-side build
 ├── config.example.js     # Config template
 │
 ├── data/
-│   └── locations.json    # Curated spot dataset (not currently used as a runtime fallback)
+│   ├── locations.json           # Curated spot dataset (not currently used as a runtime fallback)
+│   ├── us-states-borders.geojson # State polygons for perimeter scoping
+│   ├── dnr/{ABBR}.json           # Curated per-state DNR inputs (build-time source)
+│   └── spots/{ABBR}.json         # Pre-built merged OSM+DNR spot data the app actually loads (regenerated monthly)
+│
+├── tools/
+│   └── build_spots_data.py      # Generates data/spots/{ABBR}.json from OpenStreetMap + data/dnr
 │
 ├── .github/
-│   └── workflows/        # GitHub Pages deployment + data-generation workflow
+│   └── workflows/        # GitHub Pages deployment + data-generation workflows
 │
 ├── PRD.md                # Product requirements
 ├── CLAUDE.md             # Project context for Claude Code (imports PRD.md)

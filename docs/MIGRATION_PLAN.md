@@ -1,6 +1,6 @@
 # Migration Plan — Pre-built, Perimeter-Scoped Fishing Data
 
-**Status:** Phase 1 shipped (build pipeline only — not yet wired to the live app; see §10) · **Owner:** iv-for-fun · **Tracking epic:** #39
+**Status:** Phase 1 & 2 shipped (see §10); Phase 3–4 planned · **Owner:** iv-for-fun · **Tracking epic:** #39
 
 This is the design north-star for moving Lets-Go-Fishing from live per-search API
 calls to a pre-built, per-state static data model. Build against this doc; keep it
@@ -130,11 +130,18 @@ nodes per state once, then spatial-joins in code** — no per-spot network calls
    (+ADA via `toilets:wheelchair`), drinking water, playground, parking (+fee), and shelter,
    plus nearby bait/food** — `picnic_table`/`bbq`/`bench` from §6 are not pulled/joined yet
    (deferred; not part of the `data/spots` record shape in §9). Pure logic unit-tested offline
-   in `tools/test_build_spots_data.py`; the workflow must be dispatched (Actions tab) to
-   actually run against live Overpass and commit `data/spots/`, since Overpass isn't reachable
-   from every dev environment. **Not yet loaded by the app** — that's Phase 2.
-2. **Phase 2 — Runtime swap.** Perimeter loader reads merged files + IndexedDB cache; retire
-   live Overpass (keep as fallback). No merging in browser.
+   in `tools/test_build_spots_data.py`; dispatched in CI against live Overpass and verified —
+   `data/spots/{GA,AL,SC,TN,NC}.json` committed with real Chattahoochee-corridor access points,
+   non-uniform amenities, and correct catch-and-release/legal-status flags.
+2. **Phase 2 — Runtime swap. ✅ Shipped (issue #36).** New `spots-loader.js`: perimeter states
+   (`statesInPerimeter()`, shared with `enrichment.js`) → load merged `data/spots/{ABBR}.json` →
+   IndexedDB cache (6hr TTL) → distance/drive-time filter → score & rank (unchanged). Live
+   Overpass demoted to a fallback used only when no perimeter state has a pre-built file yet.
+   The live in-browser DNR fetch/match/merge code was removed from `enrichment.js` (dead once
+   the merge is pre-baked); it now only holds the perimeter helpers + `renderDNRPanel()`.
+   Verified in a real (headless) browser: a search returns pre-built spots with zero Overpass
+   requests, a repeat search hits IndexedDB with zero `data/spots/` refetches, and detail/
+   amenities views render without error.
 3. **Phase 3 — Card/detail UI.** Catch-&-release badge, hours, real amenities, legal status,
    nearby bait, accessibility advisory (issue #34).
 4. **Phase 4 — Scale.** Expand states incrementally; add monthly `schedule` cron; (later) swap

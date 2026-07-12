@@ -7,13 +7,17 @@
 //      the user explicitly types "current" or "current location".
 //   3. Atlanta fallback is last-resort only — never used if the user
 //      typed something or if GPS succeeds.
-//   4. All distance calculations and Overpass queries use the resolved
-//      origin coords exclusively — no mixing of GPS + typed values.
+//   4. All distance calculations use the resolved origin coords exclusively
+//      — no mixing of GPS + typed values.
 //
 // DATA FRESHNESS GUARANTEE:
-//   Every explicit "Find Spots" click busts both the weather and spots caches
-//   for the resolved coordinates, so all detail-view data always reflects
-//   the current location and the freshest available API data.
+//   Every explicit "Find Spots" click busts the weather cache for the
+//   resolved coordinates, so weather/moon/pressure always reflect the
+//   freshest available API data. Spot data itself (data/spots/{ABBR}.json,
+//   Phase 2 / issue #36) is pre-built monthly, not per-request, so it's
+//   intentionally cached across searches (IndexedDB, 6hr TTL) rather than
+//   busted on every click — only the live-Overpass fallback path (for an
+//   area with no pre-built file yet) uses the per-click-busted spots cache.
 
 const CACHE_TTL = 21600; // 6 hours in seconds
 const ATLANTA_FALLBACK = { lat: 33.749, lng: -84.388 };
@@ -210,7 +214,10 @@ async function fetchWeather(lat, lng, forceRefresh = false) {
 }
 
 // ---------------------------------------------------------------------------
-// Overpass API
+// Overpass API — live fallback only (Phase 2, issue #36). The primary spot
+// source is now the pre-built data/spots/{ABBR}.json files loaded by
+// loadSpotsNearby() in spots-loader.js; this is called only when no perimeter
+// state has a pre-built file yet.
 // ---------------------------------------------------------------------------
 async function fetchFishingSpotsNearby(lat, lng, forceRefresh = false) {
   const cacheKey = `spots_${coordKey(lat, lng)}`;
@@ -435,7 +442,7 @@ function showDataSourceBanner(show) {
   if (!el) { el = document.createElement('div'); el.id = 'dataSourceBanner'; (document.getElementById('locationResolutionBanner') || document.querySelector('header')).after(el); }
   if (!show) { el.style.display = 'none'; return; }
   el.className = 'px-4 py-2 text-[11px] font-medium border-b bg-green-50 border-green-200 text-green-800';
-  el.textContent = '🗺️ Showing live fishing spots near your location from OpenStreetMap.';
+  el.textContent = '🗺️ Showing fishing spots from our OpenStreetMap + DNR database (refreshed monthly).';
   el.style.display = 'block';
 }
 
@@ -492,7 +499,7 @@ function renderCards(results) {
             <span>📍 ${loc.distMiles} mi</span><span>•</span>
             <span>🚗 ~${Math.round(loc.estDriveHours * 60)} min</span>
             ${loc.weather && !loc.weather.usingFallback ? `<span>• ${Math.round(loc.weather.tempF)}°F</span>` : ''}
-            ${loc.source === 'osm' ? '<span class="text-green-600">• Live</span>' : ''}
+            ${loc.source === 'osm-live' ? '<span class="text-green-600">• Live</span>' : ''}
           </div>
           <div class="flex flex-wrap gap-1 mt-1.5">
             ${loc.targetSpecies.slice(0,2).map(s => tagPill(s)).join('')}
@@ -547,7 +554,7 @@ function renderDetailContent(loc) {
         <div class="flex flex-wrap gap-2">
           ${tagPill(loc.accessibility, 'bg-white/20 text-white')}
           ${tagPill(loc.region, 'bg-white/20 text-white')}
-          ${loc.source === 'osm' ? tagPill('Live Data', 'bg-white/20 text-white') : ''}
+          ${loc.source === 'osm-live' ? tagPill('Live Data', 'bg-white/20 text-white') : ''}
         </div>
       </div>
 
@@ -732,7 +739,16 @@ async function init() {
   showWeatherBanner(!!originWeather.usingFallback);
 
   const moonPhase = getCurrentMoonPhase();
-  const locations = await fetchFishingSpotsNearby(userCoords.lat, userCoords.lng, true);
+  const childAge      = parseInt(document.getElementById('childAge').value)  || 6;
+  const maxDriveHours = parseFloat(document.getElementById('driveTime').value) || 1.5;
+
+  // Phase 2 (issue #36): pre-built, perimeter-scoped spot data replaces the
+  // live per-search Overpass call. loadSpotsNearby (spots-loader.js) loads
+  // only the data/spots/{ABBR}.json files for states inside the drive-time
+  // perimeter, IndexedDB-cached; it falls back to live Overpass only for an
+  // area with no pre-built file yet. DNR merging is no longer done here — it's
+  // baked into those files at build time (issue #35).
+  const locations = await loadSpotsNearby(userCoords.lat, userCoords.lng, maxDriveHours * 45);
   if (locations.length === 0) {
     showDataSourceBanner(false);
     showLoading(false);
@@ -741,9 +757,6 @@ async function init() {
     return;
   }
   showDataSourceBanner(true);
-
-  const childAge      = parseInt(document.getElementById('childAge').value)  || 6;
-  const maxDriveHours = parseFloat(document.getElementById('driveTime').value) || 1.5;
 
   const candidates = locations
     .map(loc => { const distMiles = haversineDistance(userCoords, loc.coordinates); return { ...loc, distMiles: Math.round(distMiles), estDriveHours: distMiles / 45 }; })
@@ -763,43 +776,6 @@ async function init() {
     const score = calcSuccessScore(loc, spotWeather, moonPhase, childAge, pressureTrend);
     return { ...loc, weather: spotWeather, score, pressureTrend };
   });
-
-  // ── DNR enrichment (guarded, perimeter-scoped) ──────────────────────────
-  // Merge state DNR records that fall within the drive-time search radius:
-  // fuzzy-match to existing Overpass spots, then append unmatched DNR-only
-  // access points as their own cards. Never allowed to break search.
-  try {
-    if (typeof enrichFromDNR === 'function') {
-      const radiusMiles = maxDriveHours * 45;
-      const dnrRecords = await enrichFromDNR(userCoords.lat, userCoords.lng, radiusMiles);
-      if (dnrRecords && dnrRecords.length) {
-        // 1) merge DNR data into any matching Overpass results
-        allResults = allResults.map(loc => {
-          const match = matchDNRRecord(loc, dnrRecords);
-          return match ? mergeDNRIntoLoc(loc, match) : loc;
-        });
-        // 2) append unmatched DNR-only access points within the perimeter
-        const have = new Set(allResults.map(l => (l.name || '').toLowerCase()));
-        const dnrOnly = dnrRecords
-          .filter(d => d.coordinates && !have.has((d.name || '').toLowerCase()))
-          .map(d => {
-            const base = dnrRecordToLoc(d);
-            const distMiles = haversineDistance(userCoords, base.coordinates);
-            return { ...base, distMiles: Math.round(distMiles), estDriveHours: distMiles / 45, weather: originWeather };
-          })
-          .filter(loc => loc.estDriveHours <= maxDriveHours && !(childAge < 6 && loc.accessibility === 'Obstructed Bank'))
-          .map(loc => {
-            const pKey = coordKey(loc.coordinates.lat, loc.coordinates.lng);
-            if (loc.weather && typeof loc.weather.pressureHpa === 'number') recordPressure(pKey, loc.weather.pressureHpa);
-            const pressureTrend = getTrend(pKey);
-            return { ...loc, pressureTrend, score: calcSuccessScore(loc, loc.weather, moonPhase, childAge, pressureTrend) };
-          });
-        if (dnrOnly.length) allResults = allResults.concat(dnrOnly).sort((a, b) => a.distMiles - b.distMiles);
-      }
-    }
-  } catch (err) {
-    console.warn('[DNR] enrichment failed:', err.message);
-  }
 
   showLoading(false);
   renderCards(allResults);

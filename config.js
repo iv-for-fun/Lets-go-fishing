@@ -1,6 +1,0 @@
-// config.js
-const CONFIG = {
-  OPENWEATHER_API_KEY: "7a262f50ed3309f3e693c04663f45526",
-  MAPBOX_API_KEY: "",
-  STORMGLASS_API_KEY: ""
-};

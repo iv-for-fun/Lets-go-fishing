@@ -1,3 +1,6 @@
+# Local API keys — never commit real keys; see config.example.js
+config.js
+
 # OS files
 .DS_Store
 Thumbs.db

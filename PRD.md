@@ -1,6 +1,8 @@
 # Product Requirements Document (PRD)
 ## Lets-Go-Fishing — Kid-Friendly Fishing Spot Finder
-**Version:** 1.6 | **Updated:** July 12, 2026 | **Owner:** iv-for-fun
+**Version:** 1.7 | **Updated:** July 12, 2026 | **Owner:** iv-for-fun
+
+> **v1.7 Change Log:** Fixed a leaked OpenWeatherMap key: `config.js` was previously committed to the repo with a real key (now deactivated by the owner). `config.js` is now gitignored (§11, §12) and a new **Deploy to GitHub Pages** workflow (`.github/workflows/deploy-pages.yml`) generates it at deploy time from the `OPENWEATHER_API_KEY` repository secret, so the real key never touches git history. Local dev copies `config.example.js` → `config.js` as before. Note this only removes the key from the repo — it's still visible client-side in the deployed page's source, which is inherent to a client-only integration with a third-party API (§11).
 
 > **v1.6 Change Log:** Phase 2 of the pre-built, perimeter-scoped data re-architecture (epic #39) shipped: a new `spots-loader.js` replaces the live per-search Overpass call with the pre-built `data/spots/{ABBR}.json` files from Phase 1 (issue #35), scoped to the drive-time perimeter and cached in **IndexedDB** (6hr TTL). Live Overpass now runs only as a fallback for a state with no pre-built file yet (tracking: issue #36). The live in-browser DNR fetch/match/merge code (`enrichFromDNR`, `matchDNRRecord`, `mergeDNRIntoLoc`, `dnrRecordToLoc`, `normalizeDNRRecord`) was removed from `enrichment.js` — that merge now happens once at build time (Phase 1); `enrichment.js` keeps only the perimeter-geometry helpers (now shared with `spots-loader.js`) and `renderDNRPanel()`. Updated Technical Stack (§3), AI Research Agent status (§4.6), Caching Strategy (§7), Non-Functional Requirements (§13), file structure (§12), and backlog (§14, row 18).
 
@@ -56,7 +58,7 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 | Distance | Haversine formula ÷ avg 45 mph estimate | Replaces Distance Matrix API |
 | Spot Data | Pre-built, per-state `data/spots/{ABBR}.json` (OSM + DNR merged monthly at build time), loaded per drive-time perimeter via `spots-loader.js` (issue #36) | Live Overpass API fallback only for a perimeter state with no pre-built file yet; shows a "couldn't find any fishing spots" message when nothing is found either way |
 | Spot Enrichment | DNR merge baked in at build time (`tools/build_spots_data.py`, issue #35); `enrichment.js` renders the DNR panel from the pre-built `dnr` sub-object. iNaturalist sightings remain live (§4.6) | LLM summarization still backlog — see §4.6 |
-| Weather | OpenWeatherMap API (key in `config.js`) | Graceful mock fallback if no key |
+| Weather | OpenWeatherMap API (key in `config.js`) | `config.js` is gitignored (local dev only); production key is generated at deploy time from a GitHub Actions secret. Graceful mock fallback if no key |
 | Moon Phase | Client-side math (no API call) | Epoch-based calculation |
 | Pressure Trend | `localStorage` rolling 3-reading store | Computed in `scorer.js` via `getTrend()` |
 
@@ -299,6 +301,8 @@ const CONFIG = {
 
 > **iNaturalist API** requires no key. **Georgia DNR data** is bundled/proxied and requires no key. Only OpenWeatherMap and LLM summarization (optional) require keys. The app degrades gracefully without any key.
 
+**Production key delivery:** the app has no backend and GitHub Pages serves static files, so the deployed `config.js` is generated at deploy time by `.github/workflows/deploy-pages.yml` from the `OPENWEATHER_API_KEY` repository secret — the real key is never committed to git. This keeps the key out of the repo/git history (and off repo-scanning bots), but it is still readable client-side by anyone viewing the deployed page's source — inherent to any pure client-side integration with a third-party API. Restricting the key's allowed referrers/domains in the OpenWeatherMap dashboard (if supported on your plan) is recommended as defense-in-depth.
+
 ---
 
 ## 12. File Structure
@@ -310,7 +314,7 @@ lets-go-fishing/
 ├── scorer.js           ← Success Score algorithm, moon phase, pressure trend
 ├── enrichment.js       ← perimeter-geometry helpers (statesInPerimeter, shared with spots-loader.js) + DNR info panel (§4.6)
 ├── spots-loader.js     ← loads pre-built data/spots/{ABBR}.json per drive-time perimeter, IndexedDB-cached (§7); live-Overpass fallback (issue #36)
-├── config.js           ← API keys (OpenWeatherMap); committed so the client-side build works
+├── config.js           ← API keys (OpenWeatherMap); gitignored, local dev only — see config.example.js
 ├── config.example.js   ← Template (committed)
 ├── data/
 │   ├── locations.json          ← Curated spot dataset (not currently used as a runtime fallback)
@@ -326,8 +330,10 @@ lets-go-fishing/
 │   ├── build_spots_data.py     ← Generates data/spots/{ABBR}.json (SE region by default) — issue #35
 │   └── test_build_spots_data.py ← Offline unit tests for build_spots_data.py's pure logic
 └── .github/
-    └── workflows/      ← GitHub Pages deploy · state-borders gen · DNR-data gen · spots-data gen (generate-spots-data.yml)
+    └── workflows/      ← deploy-pages.yml (builds config.js from OPENWEATHER_API_KEY secret, publishes to GitHub Pages) · state-borders gen · DNR-data gen · spots-data gen (generate-spots-data.yml)
 ```
+
+**Deploying the app:** push to `main`. The **Deploy to GitHub Pages** workflow (`.github/workflows/deploy-pages.yml`) generates `config.js` from the `OPENWEATHER_API_KEY` repository secret and publishes the site — no manual build step. Requires one-time setup: add the `OPENWEATHER_API_KEY` repo secret, and set Pages source to "GitHub Actions" in repo Settings (§11).
 
 **Populating DNR data for all states:** run the **Generate DNR Data** workflow (Actions tab → `workflow_dispatch`). It runs `tools/build_dnr_data.py` on GitHub (where Overpass is reachable), which builds a per-state file of real OpenStreetMap boat-ramp / fishing-access points for every state, filtered to each state's polygon, and rebuilds the manifest. Files marked `"curated": true` (e.g. `GA.json`) are never overwritten, so authoritative per-state data always wins over the OSM baseline. OSM source is community data, not official DNR records — labelled as such in each generated file.
 

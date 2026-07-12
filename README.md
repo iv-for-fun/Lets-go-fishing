@@ -33,7 +33,7 @@ A mobile-first web app that helps parents find the **best kid-friendly fishing s
 | Hosting | GitHub Pages (client-side only) |
 | Location | Browser Geolocation API + Nominatim (OSM) geocoding fallback |
 | Drive Time | Haversine formula (client-side, no key required) |
-| Weather & Pressure | [OpenWeatherMap API](https://openweathermap.org/api) (key in `config.js`; graceful mock fallback if absent) |
+| Weather & Pressure | [OpenWeatherMap API](https://openweathermap.org/api) (key in `config.js`, gitignored locally and generated at deploy time from a GitHub Actions secret; graceful mock fallback if absent) |
 | Moon Phases | Computed client-side (astronomical formula) |
 | Fishing Spots | Pre-built, per-state OpenStreetMap + DNR data (`data/spots/{ABBR}.json`, refreshed monthly), loaded per drive-time perimeter; live Overpass query only as a fallback for a state with no pre-built file yet; shows a "couldn't find any fishing spots" message when none are returned |
 | Caching | `localStorage` (6-hour TTL, weather); `IndexedDB` (6-hour TTL, pre-built spot data) |
@@ -49,7 +49,15 @@ git clone https://github.com/iv-for-fun/Lets-go-fishing.git
 cd Lets-go-fishing
 ```
 
-### 2. Run Locally
+### 2. Add Your API Key (optional)
+
+```bash
+cp config.example.js config.js
+```
+
+Edit `config.js` and add your [OpenWeatherMap API key](https://openweathermap.org/api). `config.js` is gitignored — it's never committed. Without a key, the app falls back to mock weather data.
+
+### 3. Run Locally
 
 No build step required. Open `index.html` directly in your browser, or use a simple local server:
 
@@ -59,9 +67,12 @@ npx serve .
 python3 -m http.server 8080
 ```
 
-### 3. Deploy to GitHub Pages
+### 4. Deploy to GitHub Pages
 
-Push to the `main` branch. GitHub Pages serves directly from the repo root — no build pipeline needed.
+Push to the `main` branch — the **Deploy to GitHub Pages** workflow (`.github/workflows/deploy-pages.yml`) generates `config.js` from the `OPENWEATHER_API_KEY` repository secret and publishes the site. No manual build step. One-time setup (repo admin, in GitHub Settings):
+
+1. **Settings → Secrets and variables → Actions** → New repository secret named `OPENWEATHER_API_KEY` with your real key.
+2. **Settings → Pages → Build and deployment → Source** → `GitHub Actions`.
 
 ---
 
@@ -75,8 +86,8 @@ Lets-go-fishing/
 ├── scorer.js             # Success Score algorithm, moon phase, pressure trend
 ├── enrichment.js         # Perimeter geometry helpers (statesInPerimeter) + DNR info panel
 ├── spots-loader.js       # Loads pre-built data/spots/{ABBR}.json per drive-time perimeter, IndexedDB-cached
-├── config.js             # API keys (OpenWeatherMap); committed for the client-side build
-├── config.example.js     # Config template
+├── config.js             # API keys (OpenWeatherMap); gitignored, local-only — see config.example.js
+├── config.example.js     # Config template (committed)
 │
 ├── data/
 │   ├── locations.json           # Curated spot dataset (not currently used as a runtime fallback)
@@ -88,7 +99,7 @@ Lets-go-fishing/
 │   └── build_spots_data.py      # Generates data/spots/{ABBR}.json from OpenStreetMap + data/dnr
 │
 ├── .github/
-│   └── workflows/        # GitHub Pages deployment + data-generation workflows
+│   └── workflows/        # deploy-pages.yml (builds config.js from a repo secret, publishes to Pages) + data-generation workflows
 │
 ├── PRD.md                # Product requirements
 ├── CLAUDE.md             # Project context for Claude Code (imports PRD.md)

@@ -1,0 +1,11 @@
+{
+  "description": "Manifest of US states with a pre-built merged spot data file (data/spots/{ABBR}.json = OSM + DNR + amenity/bait proximity join, merged at build time by tools/build_spots_data.py, see docs/MIGRATION_PLAN.md). Not yet loaded at runtime (issue #36).",
+  "schemaVersion": 1,
+  "states": [
+    "AL",
+    "GA",
+    "NC",
+    "SC",
+    "TN"
+  ]
+}

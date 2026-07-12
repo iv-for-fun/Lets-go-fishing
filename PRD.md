@@ -1,6 +1,8 @@
 # Product Requirements Document (PRD)
 ## Lets-Go-Fishing — Kid-Friendly Fishing Spot Finder
-**Version:** 1.4 | **Updated:** July 8, 2026 | **Owner:** iv-for-fun
+**Version:** 1.5 | **Updated:** July 11, 2026 | **Owner:** iv-for-fun
+
+> **v1.5 Change Log:** Phase 1 of the pre-built, perimeter-scoped data re-architecture (epic #39) shipped: `tools/build_spots_data.py` + the **Generate Spots Data** workflow build merged `data/spots/{ABBR}.json` (SE region by default — GA, AL, SC, TN, NC) from OpenStreetMap (broadened tag set, amenity/bait/food proximity join) fuzzy-merged with curated `data/dnr/{ABBR}.json` records (tracking: issue #35). **Build-time only — the live app does not read `data/spots/` yet**; runtime remains live Overpass as described elsewhere in this doc until Phase 2 (issue #36) ships. Updated file structure (§12) and backlog (§14, row 18).
 
 > **v1.4 Change Log:** Corrected doc-vs-code drift. The **AI Research Agent (§4.6) was never actually implemented** — `enrichment.js` was never committed and the wiring shipped in v1.3 broke the live site; it has been reverted and moved back to the backlog (tracking: issue #33). **Static fallback spots removed** — when the live Overpass query returns nothing, the app now shows a "couldn't find any fishing spots" message instead of substituting curated Atlanta spots (`data/locations.json` remains in the repo but is no longer a runtime fallback). **Pressure trend is now wired into the score** (previously computed but never applied). Child age range confirmed 1–15 in `index.html`.
 
@@ -308,17 +310,24 @@ lets-go-fishing/
 ├── config.example.js   ← Template (committed)
 ├── data/
 │   ├── locations.json          ← Curated spot dataset (not currently used as a runtime fallback)
-│   ├── us-states-borders.geojson ← State polygons; used to scope DNR loading to the perimeter
-│   └── dnr/
-│       ├── index.json          ← Manifest: which states have DNR data files (regenerated)
-│       └── {ABBR}.json         ← Per-state DNR public-access records (GA curated; others generated)
+│   ├── us-states-borders.geojson ← State polygons; used to scope DNR/spots loading to the perimeter
+│   ├── dnr/
+│   │   ├── index.json          ← Manifest: which states have DNR data files (regenerated)
+│   │   └── {ABBR}.json         ← Per-state DNR public-access records (GA curated; others generated)
+│   └── spots/                  ← Merged OSM+DNR spot data (see docs/MIGRATION_PLAN.md); build-only, not yet loaded by the app (issue #36)
+│       ├── index.json          ← Manifest: which states have a built spots file
+│       └── {ABBR}.json         ← Per-state merged fishing spots (OSM + DNR + amenity/bait proximity)
 ├── tools/
-│   └── build_dnr_data.py       ← Generates data/dnr/{ABBR}.json for all states from OpenStreetMap
+│   ├── build_dnr_data.py       ← Generates data/dnr/{ABBR}.json for all states from OpenStreetMap
+│   ├── build_spots_data.py     ← Generates data/spots/{ABBR}.json (SE region by default) — issue #35
+│   └── test_build_spots_data.py ← Offline unit tests for build_spots_data.py's pure logic
 └── .github/
-    └── workflows/      ← GitHub Pages deploy · state-borders gen · DNR-data gen (generate-dnr-data.yml)
+    └── workflows/      ← GitHub Pages deploy · state-borders gen · DNR-data gen · spots-data gen (generate-spots-data.yml)
 ```
 
 **Populating DNR data for all states:** run the **Generate DNR Data** workflow (Actions tab → `workflow_dispatch`). It runs `tools/build_dnr_data.py` on GitHub (where Overpass is reachable), which builds a per-state file of real OpenStreetMap boat-ramp / fishing-access points for every state, filtered to each state's polygon, and rebuilds the manifest. Files marked `"curated": true` (e.g. `GA.json`) are never overwritten, so authoritative per-state data always wins over the OSM baseline. OSM source is community data, not official DNR records — labelled as such in each generated file.
+
+**Populating merged spot data (data/spots/):** run the **Generate Spots Data** workflow (Actions tab → `workflow_dispatch`). It runs `tools/build_spots_data.py` on GitHub (where Overpass is reachable), which fetches a broadened OSM fishing-spot tag set + amenity/bait/food nodes per state, spatial-joins amenities to spots in code, fuzzy-merges in curated `data/dnr/{ABBR}.json` records, and writes `data/spots/{ABBR}.json` + rebuilds the manifest. Defaults to the Southeast region (GA, AL, SC, TN, NC); pass explicit state abbreviations to build others. This is Phase 1 of the re-architecture in `docs/MIGRATION_PLAN.md` (epic #39) — the app does not read `data/spots/` yet (Phase 2, issue #36).
 
 ---
 
@@ -357,3 +366,4 @@ lets-go-fishing/
 | 15 | User-submitted fish reports | 🔲 Backlog | Requires backend |
 | 16 | Push notifications (tidal/weather alerts) | 🔲 Backlog | |
 | 17 | Multi-state DNR expansion | 🔲 Backlog | Start with GA, expand to SC/TN/AL/FL |
+| 18 | Pre-built, perimeter-scoped spot data (epic #39) | 🟡 Partial | **Phase 1 shipped (issue #35):** `tools/build_spots_data.py` + `generate-spots-data.yml` build merged `data/spots/{ABBR}.json` (SE region) from OSM + DNR; build-only, not yet read by the app. Remaining: Phase 2 runtime swap (#36), Phase 3 card/detail UI (#37), Phase 4 scale (#38) |

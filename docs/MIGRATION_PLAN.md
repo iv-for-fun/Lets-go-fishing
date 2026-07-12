@@ -1,6 +1,6 @@
 # Migration Plan — Pre-built, Perimeter-Scoped Fishing Data
 
-**Status:** Planned · **Owner:** iv-for-fun · **Tracking epic:** see repo issues
+**Status:** Phase 1 shipped (build pipeline only — not yet wired to the live app; see §10) · **Owner:** iv-for-fun · **Tracking epic:** #39
 
 This is the design north-star for moving Lets-Go-Fishing from live per-search API
 calls to a pre-built, per-state static data model. Build against this doc; keep it
@@ -122,9 +122,17 @@ nodes per state once, then spatial-joins in code** — no per-spot network calls
 
 ## 10. Phased rollout
 
-1. **Phase 1 — Build pipeline (SE region).** Generator + workflow producing merged
-   `data/spots/{GA,AL,SC,TN,NC}.json` (OSM tag set + exclusions + amenity proximity join +
-   DNR merge + bait/hours/legal-status). Validates the whole chain on the Atlanta/Chattahoochee area.
+1. **Phase 1 — Build pipeline (SE region). ✅ Shipped (issue #35).** `tools/build_spots_data.py`
+   + `.github/workflows/generate-spots-data.yml` produce merged `data/spots/{ABBR}.json`
+   (default GA, AL, SC, TN, NC) — OSM tag set + hard exclusions (incl. `access=private/no`,
+   not just `fishing=private/no`) + DNR fuzzy-merge (deduped so one DNR record never merges
+   into two OSM elements) + legal-status/hours. **Amenity proximity join covers restrooms
+   (+ADA via `toilets:wheelchair`), drinking water, playground, parking (+fee), and shelter,
+   plus nearby bait/food** — `picnic_table`/`bbq`/`bench` from §6 are not pulled/joined yet
+   (deferred; not part of the `data/spots` record shape in §9). Pure logic unit-tested offline
+   in `tools/test_build_spots_data.py`; the workflow must be dispatched (Actions tab) to
+   actually run against live Overpass and commit `data/spots/`, since Overpass isn't reachable
+   from every dev environment. **Not yet loaded by the app** — that's Phase 2.
 2. **Phase 2 — Runtime swap.** Perimeter loader reads merged files + IndexedDB cache; retire
    live Overpass (keep as fallback). No merging in browser.
 3. **Phase 3 — Card/detail UI.** Catch-&-release badge, hours, real amenities, legal status,

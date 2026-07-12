@@ -1,0 +1,54 @@
+name: Generate Spots Data
+
+# Phase 1 of the pre-built, perimeter-scoped data migration (issue #35, epic
+# #39; design: docs/MIGRATION_PLAN.md). Builds merged per-state fishing-spot
+# data (data/spots/{ABBR}.json) from OpenStreetMap (Overpass) + curated DNR
+# records (data/dnr/{ABBR}.json), via tools/build_spots_data.py. Runs here
+# (not in a sandbox) because Overpass must be reachable.
+#
+# This only writes data/spots/ — it does not change what the live app loads.
+# Wiring the runtime to read these files is issue #36.
+#
+# Trigger manually from the Actions tab. Optionally pass a space-separated
+# list of state abbreviations to (re)build only those; leave blank to build
+# the Phase 1 default (GA AL SC TN NC).
+
+on:
+  workflow_dispatch:
+    inputs:
+      states:
+        description: 'Space-separated state abbrs to build (blank = SE region: GA AL SC TN NC)'
+        required: false
+        default: ''
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run offline unit tests
+        run: python3 tools/test_build_spots_data.py
+
+      - name: Build spots data from OpenStreetMap + DNR
+        run: |
+          echo "Building spots data (states='${{ github.event.inputs.states }}')"
+          python3 tools/build_spots_data.py ${{ github.event.inputs.states }}
+
+      - name: Commit generated data
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/spots
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Generate merged spot data from OpenStreetMap + DNR (Phase 1, issue #35)"
+            git push
+          fi

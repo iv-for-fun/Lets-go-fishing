@@ -191,13 +191,13 @@ async function fetchWeather(lat, lng, forceRefresh = false) {
   try {
     const url = `https://api.open-meteo.com/v1/forecast` +
       `?latitude=${lat}&longitude=${lng}` +
-      `&current=temperature_2m,pressure_msl,wind_speed_10m,weathercode` +
+      `&current=temperature_2m,pressure_msl,wind_speed_10m,weather_code` +
       `&temperature_unit=fahrenheit&wind_speed_unit=mph`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Open-Meteo error: ${res.status}`);
     const json = await res.json();
     const current = json.current || {};
-    const weatherCode = current.weathercode ?? current.weather_code;
+    const weatherCode = current.weather_code ?? current.weathercode;
     const data = {
       tempF: current.temperature_2m,
       pressureHpa: current.pressure_msl,

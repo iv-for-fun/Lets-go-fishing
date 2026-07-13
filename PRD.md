@@ -1,6 +1,8 @@
 # Product Requirements Document (PRD)
 ## Lets-Go-Fishing — Kid-Friendly Fishing Spot Finder
-**Version:** 1.7 | **Updated:** July 12, 2026 | **Owner:** iv-for-fun
+**Version:** 1.8 | **Updated:** July 13, 2026 | **Owner:** iv-for-fun
+
+> **v1.8 Change Log:** Two related changes. **(1) Dropped OpenWeatherMap for Open-Meteo** — free, requires no API key at all, so `config.js`/`config.example.js` and the `deploy-pages.yml` secret-injection workflow added in v1.7 are removed entirely; deploys are back to a plain push-to-`main` flow with zero manual setup (§3, §11, §12). **(2) Replaced the 30-Day Forecast Calendar with a Reactive 7-Day Forecast Engine** (§6, new `forecast.js` + `solunar.js`): hourly Fish Activity / Kid Comfort scoring with a hard safety override, a "Best Window" peak-hour finder, real moon-transit-based solunar windows (not a phase proxy), and a fully reactive UI (day strip, header gauges, hourly timeline, Parent Pro-Tip) driven by a single `selectedDate` state. The card-list Success Score (§5) is unchanged — only its weather *source* changed, transparently.
 
 > **v1.7 Change Log:** Fixed a leaked OpenWeatherMap key: `config.js` was previously committed to the repo with a real key (now deactivated by the owner). `config.js` is now gitignored (§11, §12) and a new **Deploy to GitHub Pages** workflow (`.github/workflows/deploy-pages.yml`) generates it at deploy time from the `OPENWEATHER_API_KEY` repository secret, so the real key never touches git history. Local dev copies `config.example.js` → `config.js` as before. Note this only removes the key from the repo — it's still visible client-side in the deployed page's source, which is inherent to a client-only integration with a third-party API (§11).
 
@@ -50,17 +52,18 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 |---|---|---|
 | Markup | HTML5 | Single-page app (`index.html`) |
 | Styling | Tailwind CSS (CDN, mobile-first) | |
-| Logic | Vanilla JavaScript (ES6+) | `app.js`, `scorer.js`, `enrichment.js`, `spots-loader.js`, `config.js` |
-| Hosting | GitHub Pages (static, client-side only) | |
+| Logic | Vanilla JavaScript (ES6+) | `app.js`, `scorer.js`, `enrichment.js`, `spots-loader.js`, `solunar.js`, `forecast.js` |
+| Hosting | GitHub Pages (static, client-side only) | Plain push-to-`main` deploy — no build step, no secrets |
 | Caching | `localStorage` (6hr TTL, weather) + `IndexedDB` (6hr TTL, pre-built spot data) | Keyed by location + date (weather) / state abbr (spots) |
 | Location | Browser Geolocation API + Nominatim (OSM) geocoding fallback | Replaces Google Places Autocomplete |
 | Maps | Leaflet.js + OpenStreetMap tiles | Replaces MapBox API |
 | Distance | Haversine formula ÷ avg 45 mph estimate | Replaces Distance Matrix API |
 | Spot Data | Pre-built, per-state `data/spots/{ABBR}.json` (OSM + DNR merged monthly at build time), loaded per drive-time perimeter via `spots-loader.js` (issue #36) | Live Overpass API fallback only for a perimeter state with no pre-built file yet; shows a "couldn't find any fishing spots" message when nothing is found either way |
 | Spot Enrichment | DNR merge baked in at build time (`tools/build_spots_data.py`, issue #35); `enrichment.js` renders the DNR panel from the pre-built `dnr` sub-object. iNaturalist sightings remain live (§4.6) | LLM summarization still backlog — see §4.6 |
-| Weather | OpenWeatherMap API (key in `config.js`) | `config.js` is gitignored (local dev only); production key is generated at deploy time from a GitHub Actions secret. Graceful mock fallback if no key |
-| Moon Phase | Client-side math (no API call) | Epoch-based calculation |
-| Pressure Trend | `localStorage` rolling 3-reading store | Computed in `scorer.js` via `getTrend()` |
+| Weather (card list + Overview tab) | Open-Meteo API — **no API key required** | `fetchWeather()` in `app.js`. Graceful mock fallback only on fetch failure |
+| 7-Day Forecast (Forecast tab) | Open-Meteo hourly + daily, one batched call per spot | `fetchForecast()` in `forecast.js`; see §6 |
+| Moon Phase & Solunar | Client-side astronomy (no API call) | `moonPhaseForDate()` (epoch-based) + real moon-transit/rise/set solving in `solunar.js`, see §6.4 |
+| Pressure Trend (card list) | `localStorage` rolling 3-reading store | Computed in `scorer.js` via `getTrend()` — unchanged by the v1.8 forecast rework |
 
 ---
 
@@ -102,7 +105,7 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 | **Overview** | Weather widgets (Temp, Wind, Moon), 🌿 Community Fish Sightings (iNat panel), top species chips, Google Maps directions link |
 | **Fish & Gear** | Beginner Setup (Ages 3–7) + Junior Pro (Ages 8+) gear guides matched to target species; pro tip |
 | **Amenities** | Restrooms, Playground, Picnic Area, Shade; Parking Fee, Fishing License, Access Type; DNR Info panel (when available) |
-| **Forecast** | 30-day calendar grid — days 1–5 blended (moon + pressure trend), days 6–30 moon-only |
+| **Forecast** | Reactive 7-day engine — day strip, hourly timeline, Best Window halo, dual gauges; see §6 |
 
 **Parent Pro-Tip** panel appears below the tab content on every location — sourced from `getProTip(loc)`, which varies by primary species and dock vs. bank access type.
 
@@ -160,7 +163,7 @@ When a user opens a spot's detail view, live enrichment (today: iNaturalist sigh
 
 | Factor | Weight | Data Source |
 |---|---|---|
-| Catch Probability (weather temp + barometric pressure level) | 35% | OpenWeatherMap API / mock fallback |
+| Catch Probability (weather temp + barometric pressure level) | 35% | Open-Meteo API / mock fallback |
 | Lunar Phase Activity Multiplier | 20% | Client-side epoch math |
 | Kid-Factor Bonus (restrooms, playground, dock) | 20% | Location dataset |
 | Accessibility Score (Clear Bank > Obstructed) | 15% | Location dataset |
@@ -182,18 +185,47 @@ When a user opens a spot's detail view, live enrichment (today: iNaturalist sigh
 
 ---
 
-## 6. 30-Day Forecast Calendar
+## 6. Reactive 7-Day Forecast Engine
 
-The forecast tab renders a 30-day grid. Score and color coding differ by day range:
+*(v1.8 — replaces the previous 30-day moon/pressure grid.)* Optimizes for high-probability panfish/bass activity in conditions that are safe and comfortable for young kids — the **"Parent-Trust Metric"**: physical comfort (heat, cold, wind, rain) is weighted so heavily that miserable conditions always show 🔴 Poor regardless of how well the fish are biting. Implemented in `forecast.js` (data, scoring, rendering) and `solunar.js` (moon-transit astronomy).
 
-| Day Range | Score Formula | Visual Indicator |
-|---|---|---|
-| Days 1–5 | `moonScore × 0.7 + (50 + pressureModifier) × 0.3` | Blue ring border |
-| Days 6–30 | Moon phase score only | No ring |
+### 6.1 Data
+`fetchForecast(lat, lng)` makes one batched Open-Meteo call per spot (no API key) covering 7 days of hourly (temp, `pressure_msl`, wind, gusts, cloud cover, precipitation, weather code) and daily (temp max/min, sunrise/sunset, weather code) fields, with `timezone=auto` so timestamps arrive already localized. Cached like the rest of the app (`localStorage`, `forecast7_` prefix, 6h TTL). `prefetchForecast()` fires when a spot's detail view opens (before the user taps the Forecast tab) so the tab hydrates instantly from an in-flight or cached payload.
 
-**Color thresholds:** 🟢 Excellent ≥70 · 🟡 Good 45–69 · 🔴 Poor <45
+### 6.2 Scoring (computed once per hour, in `parseForecastResponse()`)
 
-Tooltip on hover shows date, moon emoji + %, pressure trend label (days 1–5 only), and blended score.
+**Step 1 — Fish Activity Sub-Score** (baseline 50, `computeFishActivity()`):
+
+| Factor | Rule |
+|---|---|
+| Pressure trend | Falling (Δ < −1.5 hPa over 3hr): **+30** · Rising (Δ > +1.5): **−20** · Stable: **+15** |
+| Light | Civil dawn/dusk or within 1hr of sunrise/sunset: **+20** · Cloud cover >60%: **+10** · Midday (11am–3pm) + cloud <15%: **−15** — clamped to **±20 total** |
+| Solunar | Hour inside a major/minor solunar window, or a New/Full Moon day: **+10** |
+
+**Step 2 — Kid Comfort Sub-Score** (baseline 100, `computeKidComfort()`):
+
+| Factor | Rule |
+|---|---|
+| Temp | 65–85°F: no penalty · 55–64°F or 86–91°F: **−30** · <55°F or ≥92°F: **−100** (🥶/🥵 badge) |
+| Wind | 0–7mph: no penalty · 8–11mph: **−40** · ≥12mph or gusts >18mph: **−100** (💨 badge) |
+| Precipitation | >40% probability or ≥2.5mm/hr: **−100** (⚡ badge) |
+
+One canonical wind-speed table drives both the qualitative label (🍃 Calm / 💨 Light Breeze / ⚠️ Choppy-Windy) and the comfort penalty above — there's no separate, looser display-only breakpoint set.
+
+**Step 3 — Compound rating** (`compoundHourRating()`): if the Kid Comfort Sub-Score drops below 40 **for any reason** (a single −100 fail, or several smaller penalties stacked), the hour is forced to 🔴 Poor — this is the Parent-Trust override, and it applies regardless of Fish Activity. Otherwise: 🟢 Excellent ≥75 · 🟡 Good 45–74 · 🔴 Poor <45.
+
+### 6.3 Best Window & Summary Banner
+`findBestWindow()` scans 2hr and 3hr spans between 5am–9pm and picks the highest-average Fish Activity window — **comfort-overridden hours score 0** in this search, so an unsafe/miserable hour can never be recommended as the "Best Window" no matter its raw fish score (this also sets the day's overall 🟢/🟡/🔴 rating). `buildSummaryBanner()` template-fills an Ideal/Compromise/Poor sentence naming the window's start/end time and its dominant factors (falling pressure, calm wind, low light, avoided midday heat).
+
+### 6.4 Solunar (`solunar.js`)
+Real moon transit/antitransit (**major windows**, ~2hr, centered on upper/lower culmination) and moonrise/moonset (**minor windows**, ~1hr) via a low-precision lunar position series (Meeus-style, accurate to a few arcmin — the same "good enough for a heuristic score" precision philosophy as the rest of the app's astronomy) and iterative hour-angle solving — not a moon-phase proxy. `getSolunarWindows(dayStartUTC, lat, lng)` returns both window sets in UTC; callers shift by Open-Meteo's `utc_offset_seconds` to bucket against local hourly timestamps. Civil dawn/dusk are approximated as sunrise −25min / sunset +25min rather than a full solar-altitude solve.
+
+### 6.5 UI (reactive to a single `selectedDate`, per `hydrateForecastDay()`)
+- **Header gauges** — Bite Action / Kid Comfort, each a 0–3 half-star rating (linear from the day's 5am–9pm average) + label, swapped into `#headerScoreArea` in place of the plain Score badge while the Forecast tab is active; restored on tab switch.
+- **Summary banner** — colored dot + the templated sentence from §6.3.
+- **7-day strip** — day/date, status pill, warning badges (💨🥵🥶⚡) — tap any day to call `selectDay(locId, dateISO)`.
+- **Hourly timeline** — condensed one-line rows; the Best Window's hours render inside a bordered "🏆 Best Window" box with fuller detail (pressure trend, solunar stars), auto-scrolled into view.
+- **Parent Pro-Tip** — `getForecastProTip()` layers a short weather clause (from the Best Window's dominant factor) onto the existing species/access-based tip from `getProTip()`.
 
 ---
 
@@ -281,27 +313,15 @@ Species matched in priority order against `targetSpecies` array; falls back to `
 - Font size minimum: **16px** for body text (prevents iOS auto-zoom on inputs)
 - Bottom nav bar: **Explore | Map | Saved**
 - Color system: forest green `#2D6A4F`, sky blue `#48CAE4`, sand `#F4E285`
-- Status banners for: GPS denial, missing weather API key, data source (pre-built OSM+DNR database vs. live-Overpass fallback), and active location display
+- Status banners for: GPS denial, weather temporarily unavailable (fetch failure — no key is ever required), data source (pre-built OSM+DNR database vs. live-Overpass fallback), and active location display
 
 ---
 
 ## 11. API Configuration
 
-```javascript
-// config.example.js — copy to config.js and add real keys
-// config.js is gitignored; never commit real keys
-const CONFIG = {
-  OPENWEATHER_API_KEY: "YOUR_OPENWEATHER_KEY_HERE",
-  // Optional — enables AI-generated "What to Expect" summaries in Detail view
-  OPENAI_API_KEY:      "YOUR_OPENAI_KEY_HERE",    // gpt-4o-mini (~$0.0002/call)
-  GEMINI_API_KEY:      "YOUR_GEMINI_KEY_HERE",    // gemini-1.5-flash (free tier)
-  // MapBox, StormGlass, and Google APIs not used in current implementation
-};
-```
+**No API key is required to run or deploy this app.** As of v1.8, weather (`app.js`) and the 7-day forecast (`forecast.js`) both run on Open-Meteo, which is free and keyless; spot data (pre-built `data/spots/{ABBR}.json`, live-Overpass fallback), geocoding (Nominatim), community sightings (iNaturalist), and DNR data are all already keyless. `config.js`/`config.example.js` and the `OPENWEATHER_API_KEY`-secret deploy workflow from v1.7 (a stopgap for the OpenWeatherMap key that had previously been committed to the repo) have been removed entirely — there is nothing left that needs one.
 
-> **iNaturalist API** requires no key. **Georgia DNR data** is bundled/proxied and requires no key. Only OpenWeatherMap and LLM summarization (optional) require keys. The app degrades gracefully without any key.
-
-**Production key delivery:** the app has no backend and GitHub Pages serves static files, so the deployed `config.js` is generated at deploy time by `.github/workflows/deploy-pages.yml` from the `OPENWEATHER_API_KEY` repository secret — the real key is never committed to git. This keeps the key out of the repo/git history (and off repo-scanning bots), but it is still readable client-side by anyone viewing the deployed page's source — inherent to any pure client-side integration with a third-party API. Restricting the key's allowed referrers/domains in the OpenWeatherMap dashboard (if supported on your plan) is recommended as defense-in-depth.
+> LLM summarization (optional, `OPENAI_API_KEY`/`GEMINI_API_KEY`) remains backlog per §4.6/§14 and was never wired up; if it ships later, it's the one piece that would reintroduce a key and this section should be updated accordingly.
 
 ---
 
@@ -309,13 +329,13 @@ const CONFIG = {
 
 ```
 lets-go-fishing/
-├── index.html          ← SPA shell, nav, views, forecast/map logic + inline UI script
+├── index.html          ← SPA shell, nav, views, map logic + inline UI script
 ├── app.js              ← search, location resolution, scoring pipeline, cache, UI rendering
-├── scorer.js           ← Success Score algorithm, moon phase, pressure trend
+├── scorer.js           ← card-list Success Score algorithm, epoch moon phase, pressure trend
 ├── enrichment.js       ← perimeter-geometry helpers (statesInPerimeter, shared with spots-loader.js) + DNR info panel (§4.6)
 ├── spots-loader.js     ← loads pre-built data/spots/{ABBR}.json per drive-time perimeter, IndexedDB-cached (§7); live-Overpass fallback (issue #36)
-├── config.js           ← API keys (OpenWeatherMap); gitignored, local dev only — see config.example.js
-├── config.example.js   ← Template (committed)
+├── solunar.js           ← moon transit/rise/set astronomy — solunar major/minor windows (§6.4)
+├── forecast.js          ← Open-Meteo fetch, 7-day scoring engine, Forecast tab rendering (§6)
 ├── data/
 │   ├── locations.json          ← Curated spot dataset (not currently used as a runtime fallback)
 │   ├── us-states-borders.geojson ← State polygons; used to scope spots loading to the perimeter
@@ -330,10 +350,10 @@ lets-go-fishing/
 │   ├── build_spots_data.py     ← Generates data/spots/{ABBR}.json (SE region by default) — issue #35
 │   └── test_build_spots_data.py ← Offline unit tests for build_spots_data.py's pure logic
 └── .github/
-    └── workflows/      ← deploy-pages.yml (builds config.js from OPENWEATHER_API_KEY secret, publishes to GitHub Pages) · state-borders gen · DNR-data gen · spots-data gen (generate-spots-data.yml)
+    └── workflows/      ← state-borders gen · DNR-data gen · spots-data gen (generate-spots-data.yml)
 ```
 
-**Deploying the app:** push to `main`. The **Deploy to GitHub Pages** workflow (`.github/workflows/deploy-pages.yml`) generates `config.js` from the `OPENWEATHER_API_KEY` repository secret and publishes the site — no manual build step. Requires one-time setup: add the `OPENWEATHER_API_KEY` repo secret, and set Pages source to "GitHub Actions" in repo Settings (§11).
+**Deploying the app:** push to `main`. GitHub Pages serves directly from the repo root — no build pipeline, no secrets, no manual setup (§11).
 
 **Populating DNR data for all states:** run the **Generate DNR Data** workflow (Actions tab → `workflow_dispatch`). It runs `tools/build_dnr_data.py` on GitHub (where Overpass is reachable), which builds a per-state file of real OpenStreetMap boat-ramp / fishing-access points for every state, filtered to each state's polygon, and rebuilds the manifest. Files marked `"curated": true` (e.g. `GA.json`) are never overwritten, so authoritative per-state data always wins over the OSM baseline. OSM source is community data, not official DNR records — labelled as such in each generated file.
 
@@ -348,6 +368,7 @@ lets-go-fishing/
 | Initial load time | < 3 seconds on 4G |
 | Overpass API timeout | 25 seconds (hard limit in query); only invoked as the live-fallback path (issue #36) |
 | Weather API timeout | Graceful fallback within 5 seconds |
+| 7-day Forecast API timeout | Graceful error state in the Forecast tab (`renderForecastError()`); rest of the app unaffected |
 | iNaturalist API timeout | 8 seconds; graceful fallback to empty panel |
 | Pre-built spots fetch | No explicit timeout; any failure (network, missing file) falls back to live Overpass for that search |
 | Cache hit rate | > 80% for repeated same-area searches within 6 hours (IndexedDB for spot data, localStorage for weather) |
@@ -362,11 +383,11 @@ lets-go-fishing/
 | 1 | Core SPA shell + bottom nav | ✅ Shipped | |
 | 2 | Overpass API live spot fetch | ✅ Shipped | Now the fallback path only (issue #36) — primary source is pre-built `data/spots/{ABBR}.json` (row 18) |
 | 3 | Success Score algorithm | ✅ Shipped | |
-| 4 | Weather integration (OWM) | ✅ Shipped | |
+| 4 | Weather integration | ✅ Shipped | Open-Meteo as of v1.8 (no key); previously OpenWeatherMap |
 | 5 | Quick-glance tags | ✅ Shipped | |
-| 6 | 30-day forecast calendar | ✅ Shipped | |
+| 6 | 30-day forecast calendar | ❌ Superseded (v1.8) | Replaced by the Reactive 7-Day Forecast Engine, §6 (row 19) |
 | 7 | Gear guide (14 species) | ✅ Shipped | |
-| 8 | Fallback curated spots JSON | ❌ Removed (v1.4) | Live-only now; shows "couldn't find any fishing spots" when Overpass returns nothing |
+| 8 | Fallback curated spots JSON | ❌ Removed (v1.4) | No static fallback; shows "couldn't find any fishing spots" when neither pre-built nor live-Overpass data returns anything (see row 18) |
 | 9 | Saved spots (localStorage) | ✅ Shipped | |
 | 10 | Leaflet map view | ✅ Shipped | |
 | 11 | Nominatim geocoding | ✅ Shipped | |
@@ -377,3 +398,4 @@ lets-go-fishing/
 | 16 | Push notifications (tidal/weather alerts) | 🔲 Backlog | |
 | 17 | Multi-state DNR expansion | 🔲 Backlog | Start with GA, expand to SC/TN/AL/FL |
 | 18 | Pre-built, perimeter-scoped spot data (epic #39) | 🟡 Partial | **Phase 1 shipped (issue #35):** `tools/build_spots_data.py` + `generate-spots-data.yml` build merged `data/spots/{ABBR}.json` (SE region) from OSM + DNR. **Phase 2 shipped (issue #36):** `spots-loader.js` loads those files per drive-time perimeter, IndexedDB-cached; live Overpass demoted to fallback-only; live in-browser DNR merge removed. Remaining: Phase 3 card/detail UI (#37 — catch-&-release badge, hours, real amenities, bait, accessibility advisory), Phase 4 scale (#38) |
+| 19 | Reactive 7-Day Forecast Engine | ✅ Shipped (v1.8) | Hourly Fish Activity/Kid Comfort scoring + Parent-Trust safety override, Best Window finder, real solunar transit windows (`solunar.js`), fully reactive UI (`forecast.js`). See §6 |

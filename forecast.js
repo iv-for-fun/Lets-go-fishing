@@ -244,7 +244,7 @@ async function fetchForecast(lat, lng, forceRefresh = false) {
 
   const url = `https://api.open-meteo.com/v1/forecast` +
     `?latitude=${lat}&longitude=${lng}` +
-    `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,sunrise,sunset` +
+    `&daily=temperature_2m_max,temperature_2m_min,weathercode,sunrise,sunset` +
     `&hourly=temperature_2m,pressure_msl,wind_speed_10m,wind_gusts_10m,cloudcover,precipitation_probability,precipitation,weathercode` +
     `&forecast_days=7&timezone=auto&temperature_unit=fahrenheit&wind_speed_unit=mph`;
 
@@ -256,10 +256,28 @@ async function fetchForecast(lat, lng, forceRefresh = false) {
   return data;
 }
 
+// Some Open-Meteo API versions/fields have shipped under two different
+// names (e.g. weathercode vs weather_code). Rather than guess, look the
+// value up under either key so a naming drift degrades gracefully instead
+// of silently producing wrong scores.
+function fieldEither(obj, nameA, nameB) {
+  return obj[nameA] !== undefined ? obj[nameA] : obj[nameB];
+}
+
 function parseForecastResponse(json, lat, lng) {
+  if (!json.hourly || !json.daily || !Array.isArray(json.hourly.time) || !Array.isArray(json.daily.time)) {
+    throw new Error('Open-Meteo forecast response missing expected hourly/daily arrays');
+  }
   const utcOffsetSeconds = json.utc_offset_seconds || 0;
   const hourlyTimes = json.hourly.time;
   const dailyTimes = json.daily.time;
+  const hourlyWeatherCode = fieldEither(json.hourly, 'weathercode', 'weather_code');
+  const dailyWeatherCode  = fieldEither(json.daily, 'weathercode', 'weather_code');
+  if (!Array.isArray(hourlyWeatherCode) || !Array.isArray(dailyWeatherCode) ||
+      !Array.isArray(json.hourly.pressure_msl) || !Array.isArray(json.hourly.wind_speed_10m) ||
+      hourlyTimes.length < dailyTimes.length * 24) {
+    throw new Error('Open-Meteo forecast response has an unexpected shape');
+  }
 
   const days = dailyTimes.map((dateISO, dayIdx) => {
     const dow = new Date(dateISO + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' });
@@ -314,7 +332,7 @@ function parseForecastResponse(json, lat, lng) {
         cloudCoverPct: json.hourly.cloudcover[idx],
         precipProbPct: json.hourly.precipitation_probability[idx],
         precipMm: json.hourly.precipitation[idx],
-        weatherCode: json.hourly.weathercode[idx],
+        weatherCode: hourlyWeatherCode[idx],
         _isGoldenLight: isGoldenLight,
         solunarStars: inMajorWindow(nowMs) ? 3 : inSolunarWindow ? 2 : 1
       };
@@ -340,7 +358,7 @@ function parseForecastResponse(json, lat, lng) {
       dateISO, dow, label,
       tempMax: json.daily.temperature_2m_max[dayIdx],
       tempMin: json.daily.temperature_2m_min[dayIdx],
-      weatherCode: json.daily.weathercode[dayIdx],
+      weatherCode: dailyWeatherCode[dayIdx],
       moonPhase, newOrFullMoon,
       hours,
       bestWindow,

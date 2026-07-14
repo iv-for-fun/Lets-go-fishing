@@ -166,13 +166,12 @@ function comfortLabelFor(avg) { return avg >= 80 ? 'GREAT' : avg >= 50 ? 'OK' : 
 // ---------------------------------------------------------------------------
 // Best Window: highest-average 2hr or 3hr span within the daylight range
 // ---------------------------------------------------------------------------
-function findBestWindow(hours) {
-  const candidates = hours.filter(h => h.hour >= FORECAST_DAYLIGHT_START_HOUR && h.hour <= FORECAST_DAYLIGHT_END_HOUR);
+function scanWindows(candidates, sizes) {
   let best = null;
   // A comfort-overridden hour (Kid Comfort < 40) contributes 0 here — the
   // "Parent-Trust Metric" means an unsafe/miserable hour can never win the
   // Best Window no matter how high its raw fish activity is.
-  [2, 3].forEach(size => {
+  sizes.forEach(size => {
     for (let i = 0; i + size <= candidates.length; i++) {
       const span = candidates.slice(i, i + size);
       const avg = span.reduce((s, h) => s + (h.comfortOverride ? 0 : h.fishScore), 0) / span.length;
@@ -182,6 +181,15 @@ function findBestWindow(hours) {
     }
   });
   return best;
+}
+
+function findBestWindow(hours) {
+  // Today may have very few real hours left (Open-Meteo's hourly array
+  // starts at the current hour, not midnight) — degrade window size, then
+  // the daylight-hours restriction itself, before giving up.
+  const daylight = hours.filter(h => h.hour >= FORECAST_DAYLIGHT_START_HOUR && h.hour <= FORECAST_DAYLIGHT_END_HOUR);
+  return scanWindows(daylight, [2, 3]) || scanWindows(hours, [2, 3]) ||
+    scanWindows(hours, [1]) || { avg: 0, size: 0, startHour: 0, endHour: 0, hours: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -242,11 +250,15 @@ async function fetchForecast(lat, lng, forceRefresh = false) {
     if (cached) return cached;
   }
 
+  // precipitation_unit is pinned explicitly to mm — a live sample showed
+  // Open-Meteo defaults precipitation to inches when temperature/wind units
+  // are set to imperial, and the scoring thresholds (§5, computeKidComfort)
+  // are calibrated in mm/hr.
   const url = `https://api.open-meteo.com/v1/forecast` +
     `?latitude=${lat}&longitude=${lng}` +
     `&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset` +
     `&hourly=temperature_2m,pressure_msl,wind_speed_10m,wind_gusts_10m,cloud_cover,precipitation_probability,precipitation,weather_code` +
-    `&forecast_days=7&timezone=auto&temperature_unit=fahrenheit&wind_speed_unit=mph`;
+    `&forecast_days=7&timezone=auto&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=mm`;
 
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Open-Meteo forecast error: ${res.status}`);
@@ -274,22 +286,33 @@ function parseForecastResponse(json, lat, lng) {
   const hourlyWeatherCode = fieldEither(json.hourly, 'weather_code', 'weathercode');
   const dailyWeatherCode  = fieldEither(json.daily, 'weather_code', 'weathercode');
   const hourlyCloudCover  = fieldEither(json.hourly, 'cloud_cover', 'cloudcover');
+  // Belt-and-suspenders: a live sample showed precipitation returned in
+  // inches despite requesting precipitation_unit=mm's sibling params being
+  // imperial. Read the actual unit label back and convert if it's not mm,
+  // rather than trusting the request param silently held.
+  const precipUnit = json.hourly_units && json.hourly_units.precipitation;
+  const precipToMm = (precipUnit && precipUnit.startsWith('in')) ? (v) => v * 25.4 : (v) => v;
   if (!Array.isArray(hourlyWeatherCode) || !Array.isArray(dailyWeatherCode) || !Array.isArray(hourlyCloudCover) ||
       !Array.isArray(json.hourly.pressure_msl) || !Array.isArray(json.hourly.wind_speed_10m) ||
       hourlyTimes.length < dailyTimes.length * 24) {
     throw new Error('Open-Meteo forecast response has an unexpected shape');
   }
 
-  const days = dailyTimes.map((dateISO, dayIdx) => {
+  // Open-Meteo's hourly array is NOT aligned to dayIdx*24 — it starts at the
+  // *current* hour, not midnight, so "today" is a short/partial day and the
+  // array runs past the end of daily.time into a trailing partial day too.
+  // Bucket every hourly entry by its own date string instead of assuming
+  // positional alignment; drop anything outside daily.time's range (we have
+  // no daily.sunrise/sunset/temp for it anyway).
+  const dayMeta = {};
+  dailyTimes.forEach((dateISO, dayIdx) => {
     const dow = new Date(dateISO + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short' });
     const label = new Date(dateISO + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', timeZone: 'UTC' });
     const moonPhase = moonPhaseForDate(new Date(dateISO + 'T12:00:00Z'));
     const newOrFullMoon = isNewOrFullMoon(moonPhase);
 
-    const sunriseISO = json.daily.sunrise[dayIdx];
-    const sunsetISO  = json.daily.sunset[dayIdx];
-    const sunriseMs  = parseLocalAsPretendUTC(sunriseISO);
-    const sunsetMs   = parseLocalAsPretendUTC(sunsetISO);
+    const sunriseMs = parseLocalAsPretendUTC(json.daily.sunrise[dayIdx]);
+    const sunsetMs  = parseLocalAsPretendUTC(json.daily.sunset[dayIdx]);
     const civilDawnStartMs = sunriseMs - 25 * 60000;
     const civilDuskEndMs   = sunsetMs + 25 * 60000;
     const morningEndMs = sunriseMs + 60 * 60000;
@@ -308,59 +331,76 @@ function parseForecastResponse(json, lat, lng) {
       return ms >= wStart && ms < wEnd;
     });
 
-    const startIdx = dayIdx * 24;
-    const hours = [];
-    for (let hr = 0; hr < 24; hr++) {
-      const idx = startIdx + hr;
-      const timeStr = hourlyTimes[idx];
-      const nowMs = parseLocalAsPretendUTC(timeStr);
-      const pressureHpa = json.hourly.pressure_msl[idx];
-      const prevPressure = idx >= 3 ? json.hourly.pressure_msl[idx - 3] : null;
-      const pressureTrend = prevPressure == null ? 'stable' : classifyPressureTrend(pressureHpa - prevPressure);
+    dayMeta[dateISO] = {
+      dateISO, dow, label, dayIdx, moonPhase, newOrFullMoon,
+      civilDawnStartMs, civilDuskEndMs, morningEndMs, eveningStartMs,
+      inAnyWindow, inMajorWindow, hours: []
+    };
+  });
 
-      const isGoldenLight =
-        (nowMs >= civilDawnStartMs && nowMs <= morningEndMs) ||
-        (nowMs >= eveningStartMs && nowMs <= civilDuskEndMs);
-      const inSolunarWindow = inAnyWindow(nowMs);
+  for (let idx = 0; idx < hourlyTimes.length; idx++) {
+    const timeStr = hourlyTimes[idx];
+    const dateISO = timeStr.slice(0, 10);
+    const meta = dayMeta[dateISO];
+    if (!meta) continue; // outside daily.time's range (trailing partial day)
 
-      const h = {
-        hour: hr,
-        timeLabel: formatHourLabel(hr),
-        tempF: json.hourly.temperature_2m[idx],
-        pressureHpa, pressureTrend,
-        windMph: json.hourly.wind_speed_10m[idx],
-        windGustMph: json.hourly.wind_gusts_10m ? json.hourly.wind_gusts_10m[idx] : 0,
-        cloudCoverPct: hourlyCloudCover[idx],
-        precipProbPct: json.hourly.precipitation_probability[idx],
-        precipMm: json.hourly.precipitation[idx],
-        weatherCode: hourlyWeatherCode[idx],
-        _isGoldenLight: isGoldenLight,
-        solunarStars: inMajorWindow(nowMs) ? 3 : inSolunarWindow ? 2 : 1
-      };
+    const hourOfDay = parseInt(timeStr.slice(11, 13), 10);
+    const nowMs = parseLocalAsPretendUTC(timeStr);
+    const pressureHpa = json.hourly.pressure_msl[idx];
+    const prevPressure = idx >= 3 ? json.hourly.pressure_msl[idx - 3] : null;
+    const pressureTrend = prevPressure == null ? 'stable' : classifyPressureTrend(pressureHpa - prevPressure);
 
-      h.fishScore = computeFishActivity(h, { isGoldenLight, inSolunarWindow, newOrFullMoon });
-      const comfort = computeKidComfort(h);
-      h.comfortScore = comfort.score;
-      h.comfortOverride = comfort.score < 40;
-      const compound = compoundHourRating(h.fishScore, comfort);
-      h.rating = compound.rating;
-      h.badges = compound.badges;
+    const isGoldenLight =
+      (nowMs >= meta.civilDawnStartMs && nowMs <= meta.morningEndMs) ||
+      (nowMs >= meta.eveningStartMs && nowMs <= meta.civilDuskEndMs);
+    const inSolunarWindow = meta.inAnyWindow(nowMs);
 
-      hours.push(h);
-    }
+    const h = {
+      hour: hourOfDay,
+      timeLabel: formatHourLabel(hourOfDay),
+      tempF: json.hourly.temperature_2m[idx],
+      pressureHpa, pressureTrend,
+      windMph: json.hourly.wind_speed_10m[idx],
+      windGustMph: json.hourly.wind_gusts_10m ? json.hourly.wind_gusts_10m[idx] : 0,
+      cloudCoverPct: hourlyCloudCover[idx],
+      precipProbPct: json.hourly.precipitation_probability[idx],
+      precipMm: precipToMm(json.hourly.precipitation[idx]),
+      weatherCode: hourlyWeatherCode[idx],
+      _isGoldenLight: isGoldenLight,
+      solunarStars: meta.inMajorWindow(nowMs) ? 3 : inSolunarWindow ? 2 : 1
+    };
 
-    const daylightHours = hours.filter(h => h.hour >= FORECAST_DAYLIGHT_START_HOUR && h.hour <= FORECAST_DAYLIGHT_END_HOUR);
-    const avgFish = daylightHours.reduce((s, h) => s + h.fishScore, 0) / daylightHours.length;
-    const avgComfort = daylightHours.reduce((s, h) => s + Math.max(0, h.comfortScore), 0) / daylightHours.length;
+    h.fishScore = computeFishActivity(h, { isGoldenLight, inSolunarWindow, newOrFullMoon: meta.newOrFullMoon });
+    const comfort = computeKidComfort(h);
+    h.comfortScore = comfort.score;
+    h.comfortOverride = comfort.score < 40;
+    const compound = compoundHourRating(h.fishScore, comfort);
+    h.rating = compound.rating;
+    h.badges = compound.badges;
+
+    meta.hours.push(h);
+  }
+
+  const days = dailyTimes.map((dateISO, dayIdx) => {
+    const meta = dayMeta[dateISO];
+    const hours = meta.hours;
+
+    // "Today" may only have a handful of remaining hours (or, late at
+    // night, none inside the usual 5am-9pm window) — fall back to whatever
+    // hours actually exist for the day rather than dividing by zero.
+    let daylightHours = hours.filter(h => h.hour >= FORECAST_DAYLIGHT_START_HOUR && h.hour <= FORECAST_DAYLIGHT_END_HOUR);
+    if (daylightHours.length === 0) daylightHours = hours;
+    const avgFish = daylightHours.length ? daylightHours.reduce((s, h) => s + h.fishScore, 0) / daylightHours.length : 0;
+    const avgComfort = daylightHours.length ? daylightHours.reduce((s, h) => s + Math.max(0, h.comfortScore), 0) / daylightHours.length : 0;
     const bestWindow = findBestWindow(hours);
     const dayRating = bestWindow.avg >= 75 ? 'excellent' : bestWindow.avg >= 45 ? 'good' : 'poor';
 
     const day = {
-      dateISO, dow, label,
+      dateISO, dow: meta.dow, label: meta.label,
       tempMax: json.daily.temperature_2m_max[dayIdx],
       tempMin: json.daily.temperature_2m_min[dayIdx],
       weatherCode: dailyWeatherCode[dayIdx],
-      moonPhase, newOrFullMoon,
+      moonPhase: meta.moonPhase, newOrFullMoon: meta.newOrFullMoon,
       hours,
       bestWindow,
       dayRating,

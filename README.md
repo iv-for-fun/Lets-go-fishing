@@ -10,16 +10,16 @@ A mobile-first web app that helps parents find the **best kid-friendly fishing s
 
 - 📍 **Auto-Location** — Uses the browser Geolocation API to find spots near you, with a manual address fallback
 - 🚗 **Drive Time Filter** — Filter spots from 30 minutes to 4 hours away (30-min increments)
-- 👦 **Child Age Input** — Ages 1–15; kids under 6 are automatically routed to dock or clear-bank locations
+- 👦 **Child Age Input** — Ages 1–15; boosts dock-access spots in the score for kids under 6, but never hides a spot — accessibility is advisory, not a filter
 - 🏆 **Success Score Algorithm** — Each spot is ranked by:
   - Catch Probability (weather temp, barometric pressure, lunar phase)
   - Kid-Factor bonus (restrooms, playgrounds, dock access)
-  - Accessibility rating (Clear Bank > Obstructed Bank for young children)
-- 🃏 **Spot Cards** — Quick-glance tags like "High Activity," "Restrooms," and "Easy Casting"
+  - Accessibility rating (Dock > Clear Bank > Obstructed Bank)
+- 🃏 **Spot Cards** — Quick-glance tags ("High Activity," "Restrooms," "Easy Casting," "Dock Access," "Playground") and an amber **♻️ Catch & Release Only** badge when applicable
 - 📋 **Detail View** per spot including:
   - Dynamic **Gear Guide** (e.g., "Bobber & Worms" for panfish, "Small Spinners" for trout)
   - **Reactive 7-Day Forecast** — hourly Fish Activity + Kid Comfort scoring with a "Parent-Trust" safety override, a "Best Window" peak-hour finder, and real moon-transit-based solunar windows (🟢/🟡/🔴 per hour and per day)
-  - Fees, parking, and accessibility details
+  - Legal status, hours, real proximity amenities, nearest bait & tackle, fees, and an accessibility advisory note (verified vs. assumed)
 - ⚡ **6-Hour Local Cache** — API results cached in `localStorage` to reduce redundant calls
 
 ---

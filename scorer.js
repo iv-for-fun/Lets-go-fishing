@@ -83,7 +83,7 @@ function calcKidFactor(amenities, accessibility, childAge) {
   let score = 0;
   if (amenities.restrooms)   score += 8;
   if (amenities.playground)  score += 7;
-  if (amenities.shadedArea)  score += 4;
+  if (amenities.shelter)     score += 4;
   if (accessibility === 'Dock') {
     score += 6;
     if (childAge < 6) score += 10;

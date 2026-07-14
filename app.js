@@ -277,11 +277,24 @@ function normalizeOverpassResults(elements) {
     if (tags.man_made === 'pier' || tags.man_made === 'jetty') accessibility = 'Dock';
     else if (tags.leisure === 'fishing' && tags.fishing === 'dock') accessibility = 'Dock';
 
+    // Same field shape as the pre-built data/spots/{ABBR}.json records
+    // (tools/build_spots_data.py) so card/detail rendering doesn't need
+    // source-specific branches. This live path has no amenity-proximity join
+    // (issue #36 scope), so on-site amenities are read straight off the
+    // spot's own tags only — a coarser signal than the build-time join, but
+    // still "unknown ≠ absent" (false here just means not tagged on this element).
+    const legalStatus = tags.fishing === 'catch_and_release' ? 'catch_and_release'
+      : (tags.fishing === 'yes' || tags.fishing === 'permissive') ? 'public' : null;
+
     const amenities = {
       restrooms: !!(tags.toilets || tags['toilets:disposal'] || tags.amenity === 'toilets'),
+      restroomsADA: tags['toilets:wheelchair'] === 'yes',
+      changingTable: tags.changing_table === 'yes',
+      drinkingWater: tags.amenity === 'drinking_water',
       playground: !!(tags.playground || tags.leisure === 'playground'),
-      picnicTables: !!(tags.leisure === 'picnic_table' || tags.amenity === 'picnic_site' || tags.picnic_table === 'yes'),
-      shadedArea: !!(tags.natural === 'wood' || tags.natural === 'tree_row' || tags.landuse === 'forest')
+      parking: tags.amenity === 'parking',
+      parkingFee: tags.amenity === 'parking' && tags.fee === 'yes',
+      shelter: tags.amenity === 'shelter'
     };
 
     const fishTag = tags.fish || tags.species || '';
@@ -289,17 +302,18 @@ function normalizeOverpassResults(elements) {
       ? fishTag.split(';').map(s => s.trim()).filter(Boolean)
       : inferSpecies(elLat);
 
-    const fees = {
-      parking: tags.fee ? `$${tags.fee}` : (tags['fee:parking'] || 'Check Locally'),
-      fishing: tags['fishing:license'] || 'License May Be Required'
-    };
-
     const region = [tags['addr:city'], tags['addr:state']].filter(Boolean).join(', ') || inferRegionLabel(elLat);
 
     results.push({
       id: `osm-${el.type}-${el.id}`,
       name, coordinates: { lat: elLat, lng: elLng },
-      accessibility, amenities, targetSpecies, fees, region, source: 'osm'
+      legalStatus, hours: tags.opening_hours || null,
+      accessibility,
+      fee: tags.fee === 'yes' ? 'yes' : (tags.fee === 'no' ? 'no' : null),
+      operator: tags.operator || null,
+      website: tags.website || tags.url || null,
+      wheelchairAccessible: tags.wheelchair === 'yes',
+      amenities, targetSpecies, nearbyBait: [], nearbyFood: [], region, source: 'osm'
     });
   }
   return results;
@@ -455,6 +469,57 @@ function getCurrentMoonPhase() {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 3 (issue #37) helpers — legal status, hours, accessibility advisory.
+// ---------------------------------------------------------------------------
+
+// Amber, prominent — never rendered as just another quick-glance pill, since
+// a catch-and-release-only spot changes what a parent should plan for.
+function catchReleaseBadge(loc, extraClass) {
+  if (!loc || loc.legalStatus !== 'catch_and_release') return '';
+  return `<div class="${extraClass || ''} bg-amber-100 border border-amber-300 text-amber-800 font-black text-[11px] px-2.5 py-1 rounded-lg inline-flex items-center gap-1 w-fit">
+    ♻️ Catch &amp; Release Only
+  </div>`;
+}
+
+// Never imply 24/7 — absent/unrecognized hours always read as "not listed",
+// not "open all the time" (MIGRATION_PLAN.md §6).
+function formatHours(hours) {
+  if (!hours) return 'Hours not listed';
+  if (hours.trim().toLowerCase() === 'sunrise-sunset') return 'Sunrise–Sunset';
+  return hours;
+}
+
+function legalStatusLabel(legalStatus) {
+  if (legalStatus === 'catch_and_release') return '♻️ Catch & Release Only';
+  if (legalStatus === 'public') return 'Public Access';
+  return 'Legal status not listed';
+}
+
+// The real proximity-joined amenity set (MIGRATION_PLAN.md §6, §9) — replaces
+// the old placeholder Picnic Area / Shade fields, which weren't backed by
+// real data.
+const AMENITY_ITEMS = [
+  { key: 'restrooms',     icon: '🚻', label: 'Restrooms' },
+  { key: 'changingTable', icon: '🚼', label: 'Changing Table' },
+  { key: 'drinkingWater', icon: '🚰', label: 'Drinking Water' },
+  { key: 'playground',    icon: '🛝', label: 'Playground' },
+  { key: 'parking',       icon: '🅿️', label: 'Parking' },
+  { key: 'shelter',       icon: '⛱️', label: 'Shelter' },
+];
+
+function nearbyBaitLabel(loc) {
+  const nearest = loc.nearbyBait && loc.nearbyBait[0];
+  return nearest ? `${nearest.name} (~${nearest.distanceMi} mi)` : 'None found nearby';
+}
+
+function feeLabel(loc) {
+  if (loc.fee === 'yes') return 'Fee Required';
+  if (loc.fee === 'no') return 'Free';
+  if (loc.amenities && loc.amenities.parkingFee) return 'Parking Fee Required';
+  return 'Check Locally';
+}
+
+// ---------------------------------------------------------------------------
 // Quick-glance tag helpers (PRD §3: "High Activity", "Restrooms", "Easy Casting")
 // ---------------------------------------------------------------------------
 function getQuickGlanceTags(loc) {
@@ -498,6 +563,7 @@ function renderCards(results) {
             <h3 class="font-bold text-gray-800 leading-tight text-sm truncate">${loc.name}</h3>
             ${scoreBadge(loc.score)}
           </div>
+          ${catchReleaseBadge(loc, 'mb-1.5')}
           <div class="flex gap-2 items-center text-[11px] text-gray-500 font-medium">
             <span>📍 ${loc.distMiles} mi</span><span>•</span>
             <span>🚗 ~${Math.round(loc.estDriveHours * 60)} min</span>
@@ -563,11 +629,12 @@ function renderDetailContent(loc) {
             <div id="headerScoreArea" class="flex items-center gap-2">${headerScoreBadgeMarkup(loc)}</div>
           </div>
         </div>
-        <div class="flex flex-wrap gap-2">
+        <div class="flex flex-wrap gap-2 mb-3">
           ${tagPill(loc.accessibility, 'bg-white/20 text-white')}
           ${tagPill(loc.region, 'bg-white/20 text-white')}
           ${loc.source === 'osm-live' ? tagPill('Live Data', 'bg-white/20 text-white') : ''}
         </div>
+        ${catchReleaseBadge(loc)}
       </div>
 
       <div class="flex border-b bg-gray-50">
@@ -618,17 +685,36 @@ function renderDetailContent(loc) {
         <div id="tab-fish" style="display:none;">${renderGearGuide(loc)}</div>
 
         <div id="tab-amenities" style="display:none;">
-          <div class="grid grid-cols-2 gap-4">
-            ${[{ key:'restrooms',icon:'🚻',label:'Restrooms'},{key:'playground',icon:'🛝',label:'Playground'},{key:'picnicTables',icon:'🧺',label:'Picnic Area'},{key:'shadedArea',icon:'🌳',label:'Shade'}].map(a => `
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-full flex items-center justify-center ${loc.amenities[a.key] ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-300'}">${a.icon}</div>
-                <div class="text-xs font-bold ${loc.amenities[a.key] ? 'text-gray-700' : 'text-gray-400'}">${a.label}</div>
-              </div>`).join('')}
+          <div class="space-y-3 mb-6">
+            <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Legal Status</span><span class="font-black text-gray-700">${legalStatusLabel(loc.legalStatus)}</span></div>
+            <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Hours</span><span class="font-black text-gray-700">${formatHours(loc.hours)}</span></div>
           </div>
+
+          <h4 class="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Amenities Nearby</h4>
+          <div class="grid grid-cols-2 gap-4">
+            ${AMENITY_ITEMS.map(a => {
+              const on = !!(loc.amenities && loc.amenities[a.key]);
+              return `
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${on ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-300'}">${a.icon}</div>
+                <div>
+                  <div class="text-xs font-bold ${on ? 'text-gray-700' : 'text-gray-400'}">${a.label}</div>
+                  ${on ? '' : '<div class="text-[10px] text-gray-300">Not listed</div>'}
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+
           <div class="mt-8 pt-6 border-t space-y-3">
-            <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Parking Fee</span><span class="font-black text-gray-700">${loc.fees.parking}</span></div>
-            <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Fishing License</span><span class="font-black text-gray-700">${loc.fees.fishing}</span></div>
-            <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Access Type</span><span class="font-black text-gray-700">${loc.accessibility}</span></div>
+            <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Nearest Bait &amp; Tackle</span><span class="font-black text-gray-700 text-right">${nearbyBaitLabel(loc)}</span></div>
+            <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Fee</span><span class="font-black text-gray-700">${feeLabel(loc)}</span></div>
+            <div>
+              <div class="flex justify-between text-xs">
+                <span class="text-gray-500 font-bold uppercase">Access Type</span>
+                <span class="font-black text-gray-700">${loc.accessibility}${loc.wheelchairAccessible ? ' · ♿ ADA' : ''}</span>
+              </div>
+              <p class="text-[10px] ${loc.dnr ? 'text-emerald-600' : 'text-gray-400'} mt-1">${loc.dnr ? '✓ Verified via state DNR records' : 'Inferred from map data — not verified; use your judgment for young kids'}</p>
+            </div>
           </div>
           ${typeof renderDNRPanel === 'function' ? renderDNRPanel(loc) : ''}
         </div>
@@ -765,9 +851,12 @@ async function init() {
   }
   showDataSourceBanner(true);
 
+  // No accessibility hard-filter (issue #34) — bank/dock access is advisory,
+  // surfaced on the card and detail view, never used to exclude a spot from
+  // results regardless of child age.
   const candidates = locations
     .map(loc => { const distMiles = haversineDistance(userCoords, loc.coordinates); return { ...loc, distMiles: Math.round(distMiles), estDriveHours: distMiles / 45 }; })
-    .filter(loc => { if (childAge < 6 && loc.accessibility === 'Obstructed Bank') return false; return loc.estDriveHours <= maxDriveHours; })
+    .filter(loc => loc.estDriveHours <= maxDriveHours)
     .sort((a, b) => a.distMiles - b.distMiles);
 
   const spotWeathers = await Promise.all(candidates.map(loc => fetchWeather(loc.coordinates.lat, loc.coordinates.lng, true).catch(() => originWeather)));

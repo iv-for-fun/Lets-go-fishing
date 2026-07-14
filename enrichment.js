@@ -154,10 +154,14 @@ async function statesInPerimeter(lat, lng, radiusMiles) {
 function renderDNRPanel(loc) {
   if (!loc || !loc.dnr) return '';
   const d = loc.dnr;
+  // Same "unknown ≠ absent" principle as the Amenities tab (issue #37): a
+  // curated DNR record's amenity flag defaults to false when the source
+  // simply didn't record it, not because it's confirmed missing — so an
+  // unset flag reads as "not listed," never a hard ✕.
   const flag = (on, label) => `
     <div class="flex items-center gap-2">
-      <span class="${on ? 'text-green-600' : 'text-gray-300'}">${on ? '✓' : '✕'}</span>
-      <span class="text-[11px] font-bold ${on ? 'text-gray-700' : 'text-gray-400'}">${label}</span>
+      <span class="${on ? 'text-emerald-600' : 'text-gray-300'}">${on ? '✓' : '·'}</span>
+      <span class="text-[11px] font-bold ${on ? 'text-gray-700' : 'text-gray-400'}">${label}${on ? '' : ' (not listed)'}</span>
     </div>`;
   const stats = [
     d.waterbody && `${d.waterbody}`,

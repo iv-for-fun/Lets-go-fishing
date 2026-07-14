@@ -165,6 +165,7 @@ function renderSavedSpots() {
       <div class="flex-1 min-w-0" onclick="showDetailView('${loc.id}')" style="cursor:pointer">
         <h3 class="font-bold text-gray-800 text-sm leading-tight truncate">${loc.name}</h3>
         <p class="text-[11px] text-gray-500 mt-0.5">${loc.region}</p>
+        ${catchReleaseBadge(loc, 'mt-1')}
         <div class="flex gap-1 mt-1.5">
           ${(loc.targetSpecies || []).slice(0, 2).map(s => `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold uppercase">${s}</span>`).join('')}
         </div>
@@ -520,7 +521,8 @@ function feeLabel(loc) {
 }
 
 // ---------------------------------------------------------------------------
-// Quick-glance tag helpers (PRD §3: "High Activity", "Restrooms", "Easy Casting")
+// Quick-glance tag helpers (PRD §4.2.1: High Activity, Restrooms, Easy
+// Casting, Dock Access, Playground)
 // ---------------------------------------------------------------------------
 function getQuickGlanceTags(loc) {
   const tags = [];
@@ -528,8 +530,12 @@ function getQuickGlanceTags(loc) {
     tags.push(tagPill('🔥 High Activity', 'bg-green-100 text-green-700'));
   if (loc.amenities && loc.amenities.restrooms)
     tags.push(tagPill('🚻 Restrooms', 'bg-blue-100 text-blue-700'));
-  if (loc.accessibility === 'Dock' || loc.accessibility === 'Clear Bank')
+  if (loc.accessibility === 'Clear Bank')
     tags.push(tagPill('🎣 Easy Casting', 'bg-orange-100 text-orange-700'));
+  if (loc.accessibility === 'Dock')
+    tags.push(tagPill('🛥️ Dock Access', 'bg-teal-100 text-teal-700'));
+  if (loc.amenities && loc.amenities.playground)
+    tags.push(tagPill('🛝 Playground', 'bg-purple-100 text-purple-700'));
   return tags.join('');
 }
 

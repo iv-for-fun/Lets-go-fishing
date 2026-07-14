@@ -1,6 +1,8 @@
 # Product Requirements Document (PRD)
 ## Lets-Go-Fishing — Kid-Friendly Fishing Spot Finder
-**Version:** 1.8 | **Updated:** July 13, 2026 | **Owner:** iv-for-fun
+**Version:** 1.9 | **Updated:** July 13, 2026 | **Owner:** iv-for-fun
+
+> **v1.9 Change Log:** Kid Comfort's temperature scoring (§6.2) now uses Open-Meteo's `apparent_temperature` ("feels like" — folds in humidity, wind, and solar radiation) instead of the plain air temp, so a hot-humid hour can trip the heat-fail threshold before the raw reading would. The displayed hourly temp is unchanged (still plain `temperature_2m`). Falls back to `temperature_2m` if `apparent_temperature` is ever absent from a response.
 
 > **v1.8 Change Log:** Two related changes. **(1) Dropped OpenWeatherMap for Open-Meteo** — free, requires no API key at all, so `config.js`/`config.example.js` and the `deploy-pages.yml` secret-injection workflow added in v1.7 are removed entirely; deploys are back to a plain push-to-`main` flow with zero manual setup (§3, §11, §12). **(2) Replaced the 30-Day Forecast Calendar with a Reactive 7-Day Forecast Engine** (§6, new `forecast.js` + `solunar.js`): hourly Fish Activity / Kid Comfort scoring with a hard safety override, a "Best Window" peak-hour finder, real moon-transit-based solunar windows (not a phase proxy), and a fully reactive UI (day strip, header gauges, hourly timeline, Parent Pro-Tip) driven by a single `selectedDate` state. The card-list Success Score (§5) is unchanged — only its weather *source* changed, transparently.
 
@@ -206,7 +208,7 @@ When a user opens a spot's detail view, live enrichment (today: iNaturalist sigh
 
 | Factor | Rule |
 |---|---|
-| Temp | 65–85°F: no penalty · 55–64°F or 86–91°F: **−30** · <55°F or ≥92°F: **−100** (🥶/🥵 badge) |
+| Temp | Scored against **`apparent_temperature`** ("feels like" — folds in humidity, wind, and solar radiation), not the plain air temp, so a hot-humid hour can cross the heat threshold before the raw reading would: 65–85°F: no penalty · 55–64°F or 86–91°F: **−30** · <55°F or ≥92°F: **−100** (🥶/🥵 badge) |
 | Wind | 0–7mph: no penalty · 8–11mph: **−40** · ≥12mph or gusts >18mph: **−100** (💨 badge) |
 | Precipitation | >40% probability or ≥2.5mm/hr: **−100** (⚡ badge) |
 

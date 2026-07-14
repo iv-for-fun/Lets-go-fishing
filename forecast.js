@@ -115,9 +115,14 @@ function computeKidComfort(h) {
   let score = 100;
   const badges = [];
 
-  if (h.tempF >= 65 && h.tempF <= 85) { /* ideal, no penalty */ }
-  else if ((h.tempF >= 55 && h.tempF < 65) || (h.tempF >= 86 && h.tempF < 92)) score -= 30;
-  else if (h.tempF < 55) { score -= 100; badges.push('🥶'); }
+  // "Feels like" (apparent_temperature — folds in humidity, wind, and solar
+  // radiation) drives the comfort thresholds, not the plain air temp: a 90°F
+  // day at high humidity can cross the heat-fail threshold well before the
+  // raw reading would. The plain temp (h.tempF) is still what's displayed.
+  const feelsLike = h.feelsLikeF;
+  if (feelsLike >= 65 && feelsLike <= 85) { /* ideal, no penalty */ }
+  else if ((feelsLike >= 55 && feelsLike < 65) || (feelsLike >= 86 && feelsLike < 92)) score -= 30;
+  else if (feelsLike < 55) { score -= 100; badges.push('🥶'); }
   else { score -= 100; badges.push('🥵'); } // >= 92
 
   const wt = windTier(h.windMph);
@@ -257,7 +262,7 @@ async function fetchForecast(lat, lng, forceRefresh = false) {
   const url = `https://api.open-meteo.com/v1/forecast` +
     `?latitude=${lat}&longitude=${lng}` +
     `&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset` +
-    `&hourly=temperature_2m,pressure_msl,wind_speed_10m,wind_gusts_10m,cloud_cover,precipitation_probability,precipitation,weather_code` +
+    `&hourly=temperature_2m,apparent_temperature,pressure_msl,wind_speed_10m,wind_gusts_10m,cloud_cover,precipitation_probability,precipitation,weather_code` +
     `&forecast_days=7&timezone=auto&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=mm`;
 
   const res = await fetch(url);
@@ -359,6 +364,7 @@ function parseForecastResponse(json, lat, lng) {
       hour: hourOfDay,
       timeLabel: formatHourLabel(hourOfDay),
       tempF: json.hourly.temperature_2m[idx],
+      feelsLikeF: Array.isArray(json.hourly.apparent_temperature) ? json.hourly.apparent_temperature[idx] : json.hourly.temperature_2m[idx],
       pressureHpa, pressureTrend,
       windMph: json.hourly.wind_speed_10m[idx],
       windGustMph: json.hourly.wind_gusts_10m ? json.hourly.wind_gusts_10m[idx] : 0,

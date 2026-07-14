@@ -179,13 +179,9 @@ function renderSavedSpots() {
 }
 
 // ---------------------------------------------------------------------------
-// Weather fetch
+// Weather fetch — Open-Meteo (free, no API key required)
 // ---------------------------------------------------------------------------
 async function fetchWeather(lat, lng, forceRefresh = false) {
-  const hasKey = typeof CONFIG !== 'undefined' &&
-    CONFIG.OPENWEATHER_API_KEY && CONFIG.OPENWEATHER_API_KEY.length > 10;
-  if (!hasKey) return { tempF: 68, pressureHpa: 1016, usingFallback: true };
-
   const cacheKey = `weather_${coordKey(lat, lng)}`;
   if (!forceRefresh) {
     const cached = getCached(cacheKey);
@@ -193,17 +189,20 @@ async function fetchWeather(lat, lng, forceRefresh = false) {
   }
 
   try {
-    const url = `https://api.openweathermap.org/data/2.5/weather` +
-      `?lat=${lat}&lon=${lng}&appid=${CONFIG.OPENWEATHER_API_KEY}&units=imperial`;
+    const url = `https://api.open-meteo.com/v1/forecast` +
+      `?latitude=${lat}&longitude=${lng}` +
+      `&current=temperature_2m,pressure_msl,wind_speed_10m,weather_code` +
+      `&temperature_unit=fahrenheit&wind_speed_unit=mph`;
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`OWM error: ${res.status}`);
+    if (!res.ok) throw new Error(`Open-Meteo error: ${res.status}`);
     const json = await res.json();
+    const current = json.current || {};
+    const weatherCode = current.weather_code ?? current.weathercode;
     const data = {
-      tempF: json.main.temp,
-      pressureHpa: json.main.pressure,
-      description: json.weather?.[0]?.description || '',
-      windMph: json.wind?.speed || 0,
-      humidity: json.main.humidity || 0
+      tempF: current.temperature_2m,
+      pressureHpa: current.pressure_msl,
+      description: (typeof describeWeatherCode === 'function') ? describeWeatherCode(weatherCode) : '',
+      windMph: current.wind_speed_10m ?? current.windspeed_10m ?? 0
     };
     setCache(cacheKey, data);
     return data;
@@ -446,7 +445,11 @@ function showDataSourceBanner(show) {
   el.style.display = 'block';
 }
 
+// moonPhaseForDate lives in solunar.js (shared with the Forecast tab's daily
+// moon-phase field); fall back to an inline copy if solunar.js hasn't loaded
+// for some reason so the rest of the app still works.
 function getCurrentMoonPhase() {
+  if (typeof moonPhaseForDate === 'function') return moonPhaseForDate(new Date());
   const refNew = new Date('2000-01-06T18:14:00Z');
   return ((Date.now() - refNew) / (1000 * 60 * 60 * 24) % 29.53) / 29.53;
 }
@@ -519,6 +522,18 @@ function renderCards(results) {
 // ---------------------------------------------------------------------------
 // Detail view — renderDetailContent exposed globally so index.html can call it
 // ---------------------------------------------------------------------------
+// The plain numeric Score badge shown in the header on the Overview/Fish/
+// Amenities tabs. The Forecast tab swaps #headerScoreArea's contents for its
+// own reactive Bite Action / Kid Comfort gauges (forecast.js) and switchTab()
+// restores this markup when navigating back to another tab.
+function headerScoreBadgeMarkup(loc) {
+  return `<div class="bg-white/20 backdrop-blur-md p-3 rounded-xl text-center min-w-[60px]">
+    <div class="text-[10px] uppercase font-black opacity-80">Score</div>
+    <div class="text-xl font-black">${loc.score}</div>
+  </div>`;
+}
+window.headerScoreBadgeMarkup = headerScoreBadgeMarkup;
+
 function renderDetailContent(loc) {
   const moonPhase = getCurrentMoonPhase();
   const moonIcon  = getMoonIcon(moonPhase);
@@ -527,7 +542,7 @@ function renderDetailContent(loc) {
   const tempDisplay     = (loc.weather && !loc.weather.usingFallback) ? `${Math.round(loc.weather.tempF)}°F` : '--°F';
   const windDisplay     = (loc.weather && loc.weather.windMph != null && !loc.weather.usingFallback) ? `${Math.round(loc.weather.windMph)} mph` : '-- mph';
   const weatherNote     = (loc.weather && loc.weather.usingFallback)
-    ? '<p class="text-[10px] text-yellow-600 mt-1">⚠️ Estimated weather — add API key for live data</p>'
+    ? '<p class="text-[10px] text-yellow-600 mt-1">⚠️ Estimated weather — live data unavailable</p>'
     : `<p class="text-[10px] text-gray-400 mt-1">${loc.weather.description || ''}</p>`;
 
   const bookmarkIcon = saved
@@ -545,10 +560,7 @@ function renderDetailContent(loc) {
               title="${saved ? 'Remove from saved' : 'Save this spot'}">
               ${bookmarkIcon}
             </button>
-            <div class="bg-white/20 backdrop-blur-md p-3 rounded-xl text-center min-w-[60px]">
-              <div class="text-[10px] uppercase font-black opacity-80">Score</div>
-              <div class="text-xl font-black">${loc.score}</div>
-            </div>
+            <div id="headerScoreArea" class="flex items-center gap-2">${headerScoreBadgeMarkup(loc)}</div>
           </div>
         </div>
         <div class="flex flex-wrap gap-2">
@@ -622,18 +634,13 @@ function renderDetailContent(loc) {
         </div>
 
         <div id="tab-forecast" style="display:none;">
-          <div id="forecastGrid" class="grid grid-cols-7 gap-1"></div>
-          <div class="mt-4 flex gap-4 justify-center">
-            <div class="flex items-center gap-1 text-[10px] font-bold"><div class="w-2 h-2 rounded bg-green-400"></div> Excellent</div>
-            <div class="flex items-center gap-1 text-[10px] font-bold"><div class="w-2 h-2 rounded bg-yellow-300"></div> Good</div>
-            <div class="flex items-center gap-1 text-[10px] font-bold"><div class="w-2 h-2 rounded bg-red-400"></div> Poor</div>
-          </div>
+          <div id="forecastRoot"></div>
         </div>
       </div>
 
       <div class="mx-5 mb-5 bg-yellow-50 border-2 border-dashed border-yellow-200 rounded-xl p-4">
         <div class="text-[10px] uppercase font-black text-yellow-600 mb-1">Parent Pro-Tip</div>
-        <p class="text-xs text-yellow-800 italic leading-relaxed font-medium">"${getProTip(loc)}"</p>
+        <p id="parentProTipText" class="text-xs text-yellow-800 italic leading-relaxed font-medium">"${getProTip(loc)}"</p>
       </div>
     </div>`;
 

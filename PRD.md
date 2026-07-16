@@ -1,6 +1,8 @@
 # Product Requirements Document (PRD)
 ## Lets-Go-Fishing — Kid-Friendly Fishing Spot Finder
-**Version:** 1.9 | **Updated:** July 13, 2026 | **Owner:** iv-for-fun
+**Version:** 1.10 | **Updated:** July 14, 2026 | **Owner:** iv-for-fun
+
+> **v1.10 Change Log:** Phase 3 of the pre-built data re-architecture (epic #39, issue #37) shipped: card/detail UI now surfaces the rich merged spot record instead of collapsing it into the old placeholder shape. New: amber **♻️ Catch & Release Only** badge (card + detail) for `legalStatus === 'catch_and_release'`; hours line ("Sunrise–Sunset" / raw / "Hours not listed" — never implies 24/7); legal status line; the Amenities tab now renders the real proximity-joined set (Restrooms, Changing Table, Drinking Water, Playground, Parking, Shelter) with `false` styled as "Not listed" rather than a confirmed absence; "Nearest Bait & Tackle" from `nearbyBait`; Access Type carries a verified (DNR-matched) vs. assumed (OSM default) advisory note, wheelchair/ADA flag. Also closes issue #34: the `childAge < 6 && accessibility === 'Obstructed Bank'` hard filter is removed from `app.js` — accessibility is advisory only, never exclusionary (it excluded nothing in practice, since the build pipeline never assigns `'Obstructed Bank'`, but the exclusionary code path is now gone). `spots-loader.js`'s `normalizeSpotRecord()` and the live-Overpass fallback's `normalizeOverpassResults()` (`app.js`) both now emit the full field set (`legalStatus`, `hours`, `fee`, `operator`, `website`, `wheelchairAccessible`, `nearbyBait`, `nearbyFood`) instead of the old `fees`/`picnicTables`/`shadedArea` placeholders. Kid-Factor scoring's "shaded area" bonus (§5) now reads the real `amenities.shelter` field instead of the never-populated `shadedArea`. Data Model (§8) corrected to match the actual runtime shape. The Catch & Release badge also now appears everywhere a spot can be surfaced, not just the card list and detail view: **Map view popups** (§4.4) and the **Saved Spots** list (§4.5). The DNR Info panel (§4.3, `renderDNRPanel()`) adopts the same unknown ≠ absent treatment for its own unset amenity flags. Also fixed pre-existing card/quick-glance-tag drift from before Phase 3: `getQuickGlanceTags()` was missing the documented 🛥️ Dock Access and 🛝 Playground pills, and incorrectly fired 🎣 Easy Casting for Dock spots too (§4.2.1 has always specified Clear Bank only for Easy Casting, Dock only for Dock Access). See §4.1–§4.5, §5, §8, §14 row 18.
 
 > **v1.9 Change Log:** Kid Comfort's temperature scoring (§6.2) now uses Open-Meteo's `apparent_temperature` ("feels like" — folds in humidity, wind, and solar radiation) instead of the plain air temp, so a hot-humid hour can trip the heat-fail threshold before the raw reading would. The displayed hourly temp is unchanged (still plain `temperature_2m`). Falls back to `temperature_2m` if `apparent_temperature` is ever absent from a response.
 
@@ -74,7 +76,7 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 ### 4.1 Header / Controls
 - **Max Drive Time Dropdown:** 0.5 to 4.0 hours in 30-minute increments.
 - **Child Age Input:** Integer 1–15 (`max="15"` in `index.html`).
-  - If `age < 6` → filter out **Obstructed Bank** locations entirely; prioritize **Dock** or **Clear Bank**.
+  - Feeds the Kid-Factor dock-priority bonus (§5) — a young child (`age < 6`) boosts Dock-access spots in the score. It does **not** exclude any spot from the results: accessibility is advisory only, never a hard filter (issue #34; previously an `age < 6 && accessibility === 'Obstructed Bank'` filter existed in `app.js` but excluded nothing in practice, since the build pipeline never assigns `'Obstructed Bank'` — removed in v1.10).
 - **Location Detection:** Auto-detect via Geolocation API; fallback to Nominatim geocoding text search.
   - Blank input or "current"/"current location" → GPS only.
   - Any other text → Nominatim geocode (no GPS mixing).
@@ -85,6 +87,7 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 - Each card displays:
   - Location name, distance (miles), and estimated drive time.
   - **Success Score** (0–100) as a color-coded badge (🟢 70+, 🟡 40–69, 🔴 <40).
+  - **♻️ Catch & Release Only** badge (amber, prominent) when `legalStatus === 'catch_and_release'` — reinforced in the detail view header (issue #37).
   - Species tags (up to 2 shown + overflow count).
   - **Quick-glance tags** (see §4.2.1).
   - "Live" badge only when a spot came from the live-Overpass fallback path this search (`source === 'osm-live'`) — pre-built OSM/DNR spots (the normal case) don't carry it, since they're refreshed monthly, not fetched live.
@@ -106,18 +109,18 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 |---|---|
 | **Overview** | Weather widgets (Temp, Wind, Moon), 🌿 Community Fish Sightings (iNat panel), top species chips, Google Maps directions link |
 | **Fish & Gear** | Beginner Setup (Ages 3–7) + Junior Pro (Ages 8+) gear guides matched to target species; pro tip |
-| **Amenities** | Restrooms, Playground, Picnic Area, Shade; Parking Fee, Fishing License, Access Type; DNR Info panel (when available) |
+| **Amenities** | Legal status (public / catch-and-release / not listed) &amp; hours; real proximity-joined amenities — Restrooms, Changing Table, Drinking Water, Playground, Parking, Shelter (unknown ≠ absent — "Not listed" styling, never a false negative); Nearest Bait & Tackle (with distance); Fee; Access Type + wheelchair/ADA flag + verified-vs-assumed advisory note; DNR Info panel (when available) |
 | **Forecast** | Reactive 7-day engine — day strip, hourly timeline, Best Window halo, dual gauges; see §6 |
 
 **Parent Pro-Tip** panel appears below the tab content on every location — sourced from `getProTip(loc)`, which varies by primary species and dock vs. bank access type.
 
 ### 4.4 Map View
 - Leaflet.js map with color-coded circle markers (green / yellow / red by score).
-- Tap a marker to see a popup with score, distance, drive time, and a "View Details" button.
+- Tap a marker to see a popup with score, distance, drive time, and a "View Details" button — plus the **♻️ Catch & Release Only** badge when applicable, so it's visible before a parent ever opens the detail view.
 
 ### 4.5 Saved Spots
 - Bookmark icon on any card saves the location to `localStorage`.
-- Dedicated **Saved** tab in bottom nav lists all bookmarked spots; tap to open detail view.
+- Dedicated **Saved** tab in bottom nav lists all bookmarked spots (also showing the ♻️ Catch & Release badge) — tap to open detail view.
 
 ### 4.6 AI Research Agent (Spot Enrichment) 🔲 Backlog — NOT shipped (reverted)
 
@@ -139,7 +142,7 @@ When a user opens a spot's detail view, live enrichment (today: iNaturalist sigh
 - Fuzzy-matches on name similarity and geographic proximity (≤3 km) to merge DNR data into OSM-derived spots for the same state.
 - Merged spots get confirmed species, official fees, and DNR amenity flags folded in.
 - Unmatched DNR spots within the state are written into `data/spots/{ABBR}.json` as their own records with `source: "dnr"`.
-- At runtime, a **DNR Info panel** (`renderDNRPanel(loc)`, `enrichment.js`) renders on the Amenities tab whenever `loc.dnr` is present (regardless of whether the spot's own `source` is `"osm"` or `"dnr"`), showing official waterbody stats, ADA accessibility, amenity icons, and a deep link to the DNR website.
+- At runtime, a **DNR Info panel** (`renderDNRPanel(loc)`, `enrichment.js`) renders on the Amenities tab whenever `loc.dnr` is present (regardless of whether the spot's own `source` is `"osm"` or `"dnr"`), showing official waterbody stats, ADA accessibility, amenity icons, and a deep link to the DNR website. Unset DNR amenity flags render as a neutral "(not listed)" rather than a hard ✕ (same unknown ≠ absent principle as §4.3's Amenities tab, issue #37) — a curated record's flag defaults to `false` when the source didn't record it, not because it's confirmed absent.
 
 #### iNaturalist Sightings (`enrichSpotWithINat`)
 - Queries `https://api.inaturalist.org/v1/observations` filtered to `iconic_taxa=Actinopterygii` (fish), within 10 km, within the last 60 days.
@@ -174,7 +177,7 @@ When a user opens a spot's detail view, live enrichment (today: iNaturalist sigh
 **Kid-Factor Scoring Detail (`calcKidFactor()`):**
 - Restrooms present: +8 pts
 - Playground present: +7 pts
-- Shaded area present: +4 pts
+- Shelter present (proximity-joined `amenities.shelter`, v1.10 — previously read a `shadedArea` field the data pipeline never produced): +4 pts
 - Dock Access: +6 pts base
   - Additional +10 pts if `childAge < 6` (mandatory dock priority)
 - **Maximum cap: 25 pts** (normalized to 0–100 before weighting)
@@ -249,46 +252,70 @@ Weather API responses are stored in `localStorage` keyed by location + date; eve
 
 ## 8. Data Model — Location Object
 
+*(v1.10 — corrected to match the actual runtime shape produced by `normalizeSpotRecord()` in `spots-loader.js`, issue #37. Previous versions of this section pre-dated the Phase 1/2 merged-record schema and had drifted from the code; `legalStatus`, `hours`, `fee`, `wheelchairAccessible`, and the real amenity/bait fields below did not exist here before v1.10 even though the build pipeline (`tools/build_spots_data.py`) had produced them since v1.5.)*
+
 ```json
 {
-  "id": "lake-allatoona-001",
+  "id": "osm-ga-node-67126795",
   "name": "Lake Allatoona — Day Use Area",
   "coordinates": { "lat": 34.1, "lng": -84.7 },
+  "legalStatus": "public",
+  "hours": "sunrise-sunset",
   "accessibility": "Dock",
+  "fee": "no",
+  "operator": "U.S. Army Corps of Engineers",
+  "website": null,
+  "wheelchairAccessible": false,
   "amenities": {
-    "restrooms": true,
-    "playground": true,
-    "picnicTables": true,
-    "shadedArea": true
+    "restrooms": true, "restroomsADA": false, "changingTable": false,
+    "drinkingWater": true, "playground": true, "parking": true,
+    "parkingFee": false, "shelter": false
   },
+  "nearbyBait": [{ "name": "Bandy's Bait Shack", "distanceMi": 3.2 }],
+  "nearbyFood": [{ "name": "Jersey Mike's Subs", "distanceMi": 2.8 }],
   "targetSpecies": ["Largemouth Bass", "Crappie", "Bluegill"],
-  "fees": { "parking": "$5/day", "fishing": "GA License Required" },
   "region": "Atlanta, GA",
   "distMiles": 32.4,
   "estDriveHours": 0.72,
   "score": 78,
-  "source": "osm"
+  "source": "osm",
+  "dnr": null
 }
 ```
 
-> `source` is `"osm"` for pre-built OSM-derived spots (`data/spots/{ABBR}.json`, the normal case, refreshed monthly — see §3, §7); `"osm-live"` specifically for spots fetched via the live-Overpass fallback this search (only used when a perimeter state has no pre-built file yet, so the "Live" badge is accurate); `"dnr"` for state-DNR-only spots (now written into `data/spots/{ABBR}.json` at build time, not merged live); omitted or `"static"` for curated fallback spots (currently unused, see backlog row 8).
+- `legalStatus` — `"public"` (`fishing=yes|permissive` on the OSM element) · `"catch_and_release"` (`fishing=catch_and_release`, surfaced as the amber **♻️ Catch & Release Only** badge on the card and reinforced in the detail view) · `null` when unspecified, rendered as "Legal status not listed" — **never assumed public**.
+- `hours` — raw `opening_hours` tag, or `null`. Rendered as "Sunrise–Sunset" for the literal `sunrise-sunset` value, the raw string otherwise, or "Hours not listed" when absent. Never implies 24/7.
+- `accessibility` — `"Dock"` or `"Clear Bank"`; **advisory only, never used to filter results** (issue #34) — no spot is excluded from the card list on this basis, for any child age. Distinguished in the Amenities tab as "✓ Verified via state DNR records" when `dnr` is present, or "Inferred from map data — not verified" otherwise (unknown ≠ known-clear).
+- `amenities` — real proximity-joined values (on-site, ~300–500m at build time — see §6/§7 of `docs/MIGRATION_PLAN.md`); `false` renders as "Not listed" (neutral), never a confirmed absence.
+- `nearbyBait` / `nearbyFood` — nearest matches (~5–10 mi) with `distanceMi`; the Amenities tab shows the nearest bait & tackle shop, or "None found nearby" if the array is empty.
+- `fee` — `"yes"` / `"no"` / `null` (spot's own `fee` tag); combined with `amenities.parkingFee` into a single Fee row (Fee Required / Free / Parking Fee Required / Check Locally).
+- `source` is `"osm"` for pre-built OSM-derived spots (`data/spots/{ABBR}.json`, the normal case, refreshed monthly — see §3, §7); `"osm-live"` specifically for spots fetched via the live-Overpass fallback this search (only used when a perimeter state has no pre-built file yet, so the "Live" badge is accurate; this path also emits the fields above, but without the amenity-proximity join — see §3 caveat); `"dnr"` for state-DNR-only spots (now written into `data/spots/{ABBR}.json` at build time, not merged live); omitted or `"static"` for curated fallback spots (currently unused, see backlog row 8).
 
-**Extended DNR sub-object** (present when `source === "dnr"` or DNR match found):
+**Extended DNR sub-object** (present when `source === "dnr"` or a DNR match was fuzzy-merged at build time):
 
 ```json
 "dnr": {
+  "dnrId": "ga-lake-allatoona",
+  "name": "Lake Allatoona",
+  "state": "GA",
   "waterbody": "Lake Allatoona",
   "county": "Cherokee",
   "acres": 12010,
   "status": "Public",
   "operator": "U.S. Army Corps of Engineers",
   "phone": "770-382-4700",
+  "coordinates": { "lat": 34.1, "lng": -84.7 },
+  "accessibility": "Dock",
   "rampType": "Paved",
   "numLanes": 4,
-  "motorRestrictions": "None",
-  "yearRound": true,
-  "bankFishing": true,
-  "pier": true,
+  "amenities": {
+    "restrooms": true, "restroomsADA": true, "parking": true, "parkingADA": true,
+    "dockADA": true, "camping": true, "baitShop": false, "equipmentRental": false,
+    "loanPole": false, "kidsProgram": false, "picnicArea": true
+  },
+  "confirmedSpecies": ["Largemouth Bass", "Striped Bass"],
+  "fees": { "parking": "Free", "fishing": "GA License Required" },
+  "fishing": { "motorRestrictions": "None listed", "yearRound": true, "bankFishing": true, "pier": true },
   "moreInfo": "Restrooms, ADA accessible, picnic area, camping nearby",
   "infoLink": "https://gadnr.org/..."
 }
@@ -399,5 +426,5 @@ lets-go-fishing/
 | 15 | User-submitted fish reports | 🔲 Backlog | Requires backend |
 | 16 | Push notifications (tidal/weather alerts) | 🔲 Backlog | |
 | 17 | Multi-state DNR expansion | 🔲 Backlog | Start with GA, expand to SC/TN/AL/FL |
-| 18 | Pre-built, perimeter-scoped spot data (epic #39) | 🟡 Partial | **Phase 1 shipped (issue #35):** `tools/build_spots_data.py` + `generate-spots-data.yml` build merged `data/spots/{ABBR}.json` (SE region) from OSM + DNR. **Phase 2 shipped (issue #36):** `spots-loader.js` loads those files per drive-time perimeter, IndexedDB-cached; live Overpass demoted to fallback-only; live in-browser DNR merge removed. Remaining: Phase 3 card/detail UI (#37 — catch-&-release badge, hours, real amenities, bait, accessibility advisory), Phase 4 scale (#38) |
+| 18 | Pre-built, perimeter-scoped spot data (epic #39) | 🟡 Partial | **Phase 1 shipped (issue #35):** `tools/build_spots_data.py` + `generate-spots-data.yml` build merged `data/spots/{ABBR}.json` (SE region) from OSM + DNR. **Phase 2 shipped (issue #36):** `spots-loader.js` loads those files per drive-time perimeter, IndexedDB-cached; live Overpass demoted to fallback-only; live in-browser DNR merge removed. **Phase 3 shipped (issue #37, v1.10):** card/detail UI now surfaces the real merged data — catch-&-release badge, hours, legal status, real proximity amenities, nearest bait & tackle, accessibility advisory (verified-vs-assumed, no hard filter — issue #34 closed). Remaining: Phase 4 scale (#38) |
 | 19 | Reactive 7-Day Forecast Engine | ✅ Shipped (v1.8) | Hourly Fish Activity/Kid Comfort scoring + Parent-Trust safety override, Best Window finder, real solunar transit windows (`solunar.js`), fully reactive UI (`forecast.js`). See §6 |

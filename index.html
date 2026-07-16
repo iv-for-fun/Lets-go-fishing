@@ -206,6 +206,7 @@
           .bindPopup(`
             <div style="min-width:180px">
               <p style="font-weight:800;font-size:13px;margin-bottom:4px">${loc.name}</p>
+              ${typeof catchReleaseBadge === 'function' ? catchReleaseBadge(loc, 'mb-1.5') : ''}
               <p style="font-size:11px;color:#555;margin-bottom:6px">${scoreLabel} &nbsp;•&nbsp; Score: ${loc.score}</p>
               <p style="font-size:11px;color:#555;margin-bottom:6px">📍 ${loc.distMiles} mi &nbsp;•&nbsp; 🚗 ~${Math.round(loc.estDriveHours * 60)} min</p>
               <button onclick="showDetailView('${loc.id}')" style="background:#2D6A4F;color:#fff;border:none;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;width:100%">View Details</button>
@@ -281,35 +282,6 @@
       return '🌘';
     }
 
-    // ---------- Saved Spots ----------
-    function getSavedSpots() {
-      try { return JSON.parse(localStorage.getItem('savedSpots') || '[]'); } catch { return []; }
-    }
-    function renderSavedSpots() {
-      const container = document.getElementById('savedContainer');
-      const spots = getSavedSpots();
-      if (spots.length === 0) {
-        container.innerHTML = `<div class="text-center py-16 text-gray-400"><div class="text-4xl mb-3">🔖</div><p class="font-bold text-sm">No saved spots yet.</p><p class="text-xs mt-1">Hit the bookmark icon on any spot card to save it.</p></div>`;
-        return;
-      }
-      container.innerHTML = spots.map(loc => `
-        <div onclick="showDetailView('${loc.id}')" class="bg-white rounded-xl shadow-sm border p-4 flex gap-4 items-center cursor-pointer active:scale-[0.98] transition-all">
-          <div class="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">${loc.accessibility === 'Dock' ? '🛶' : '🏖️'}</div>
-          <div class="flex-1">
-            <h3 class="font-bold text-gray-800 leading-tight text-sm">${loc.name}</h3>
-            <p class="text-[11px] text-gray-500 mt-0.5">${loc.region}</p>
-          </div>
-          <button onclick="event.stopPropagation(); unsaveSpot('${loc.id}')" class="text-red-400 hover:text-red-600 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center">
-            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M5 5a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 19V5z"/></svg>
-          </button>
-        </div>
-      `).join('');
-    }
-    function unsaveSpot(id) {
-      const spots = getSavedSpots().filter(s => s.id !== id);
-      localStorage.setItem('savedSpots', JSON.stringify(spots));
-      renderSavedSpots();
-    }
   </script>
 </body>
 </html>

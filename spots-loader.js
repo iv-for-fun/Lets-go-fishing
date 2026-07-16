@@ -116,12 +116,12 @@ function _fallbackSpecies(lat) {
   return ['Bass', 'Bluegill', 'Catfish', 'Bream'];
 }
 
-function _parkingFeeLabel(rec) {
-  if (rec.amenities && rec.amenities.parkingFee === true) return 'Fee Required';
-  if (rec.fee === 'no') return 'Free';
-  return 'Check Locally';
-}
-
+// Phase 3 (issue #37): keep the merged record's real fields intact instead of
+// collapsing them into the old placeholder shape (fees.parking guesswork,
+// fictitious picnicTables, shadedArea-as-shelter) — the card/detail UI now
+// renders legalStatus, hours, fee, nearbyBait, and the true amenity set
+// directly, with unknown (false/null) rendered as "not listed" rather than a
+// confirmed absence (MIGRATION_PLAN.md §6).
 function normalizeSpotRecord(rec) {
   if (!rec || !rec.coordinates || typeof rec.coordinates.lat !== 'number' || typeof rec.coordinates.lng !== 'number') return null;
   const a = rec.amenities || {};
@@ -129,19 +129,28 @@ function normalizeSpotRecord(rec) {
     id: rec.id,
     name: rec.name || 'Fishing Access',
     coordinates: rec.coordinates,
+    legalStatus: rec.legalStatus || null,
+    hours: rec.hours || null,
     accessibility: rec.accessibility || 'Clear Bank',
+    fee: rec.fee || null,
+    operator: rec.operator || null,
+    website: rec.website || null,
+    wheelchairAccessible: !!rec.wheelchairAccessible,
     amenities: {
       restrooms: !!a.restrooms,
+      restroomsADA: !!a.restroomsADA,
+      changingTable: !!a.changingTable,
+      drinkingWater: !!a.drinkingWater,
       playground: !!a.playground,
-      // picnicTables not modeled by the build pipeline yet (deferred, see
-      // MIGRATION_PLAN.md §6 / issue #35); shadedArea approximated from shelter.
-      picnicTables: false,
-      shadedArea: !!a.shelter
+      parking: !!a.parking,
+      parkingFee: !!a.parkingFee,
+      shelter: !!a.shelter
     },
+    nearbyBait: Array.isArray(rec.nearbyBait) ? rec.nearbyBait : [],
+    nearbyFood: Array.isArray(rec.nearbyFood) ? rec.nearbyFood : [],
     targetSpecies: (Array.isArray(rec.targetSpecies) && rec.targetSpecies.length)
       ? rec.targetSpecies
       : _fallbackSpecies(rec.coordinates.lat),
-    fees: { parking: _parkingFeeLabel(rec), fishing: 'License May Be Required' },
     region: rec.region || 'Nearby',
     source: rec.source || 'osm',
     dnr: rec.dnr || null

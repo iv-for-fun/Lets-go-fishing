@@ -166,6 +166,7 @@ function renderSavedSpots() {
         <h3 class="font-bold text-gray-800 text-sm leading-tight truncate">${loc.name}</h3>
         <p class="text-[11px] text-gray-500 mt-0.5">${loc.region}</p>
         ${catchReleaseBadge(loc, 'mt-1')}
+        ${statusNoticeBanner(loc, 'mt-1')}
         <div class="flex gap-1 mt-1.5">
           ${(loc.targetSpecies || []).slice(0, 2).map(s => `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold uppercase">${s}</span>`).join('')}
         </div>
@@ -314,7 +315,8 @@ function normalizeOverpassResults(elements) {
       operator: tags.operator || null,
       website: tags.website || tags.url || null,
       wheelchairAccessible: tags.wheelchair === 'yes',
-      amenities, targetSpecies, nearbyBait: [], nearbyFood: [], region, source: 'osm'
+      amenities, targetSpecies, nearbyBait: [], nearbyFood: [], region, source: 'osm',
+      statusNotice: null // live-fallback ids don't match data/spot-notices.json's build-time id scheme
     });
   }
   return results;
@@ -401,6 +403,34 @@ function renderGearGuide(loc) {
 }
 
 // ---------------------------------------------------------------------------
+// Seasonal fish-behavior clause — layered onto getProTip() below. Pure
+// client-side lookup, no external data; keyed off the same species strings
+// getProTip already uses so there's no separate taxonomy to maintain.
+// ---------------------------------------------------------------------------
+const SEASONAL_TIPS = {
+  'Bluegill':         { spring: `Spawning beds put Bluegill in skinny water right now — perfect for little casters.`, summer: `Midday sun pushes them deep; fish the shade early or late.`, fall: `Cooling water has them feeding heavily before winter — a great fall pick.`, winter: `Slow down — Bluegill hold tight to deep structure in cold water.` },
+  'Bream':            { spring: `Bream move shallow to spawn around the full moon — prime time.`, summer: `Look for shade; Bream avoid the hottest midday sun.`, fall: `Still feeding actively as the water cools.`, winter: `Bream are sluggish now — fish slow and deep.` },
+  'Crappie':          { spring: `Crappie push shallow to spawn — dock pilings and brush get crowded.`, summer: `They suspend deeper around structure once it warms up.`, fall: `A second shallow push as water cools — good numbers again.`, winter: `Crappie school tight and deep; vertical jigging is the move.` },
+  'Catfish':          { spring: `Catfish feed heavily as water warms — good action after spawn.`, summer: `Most active after dark or early morning in the heat.`, fall: `Feeding up before winter — a strong bite window.`, winter: `Slower bite; fish deep holes patiently.` },
+  'Bass':              { spring: `Bass move shallow to spawn — target the banks.`, summer: `Early morning and dusk beat the midday heat.`, fall: `Bass feed aggressively chasing baitfish before winter.`, winter: `Slow presentations near deep structure work best.` },
+  'Largemouth Bass':  { spring: `Spawning season has Largemouth shallow and aggressive near cover.`, summer: `Fish shady cover early or late to beat the heat.`, fall: `A strong feeding window as they bulk up for winter.`, winter: `Slow it down and fish deep near structure.` },
+  'Walleye':          { spring: `Walleye push shallow right after ice-out/spawn — good bank access.`, summer: `Stick to dawn/dusk low light.`, fall: `Feeding heavily — one of the best times to target them.`, winter: `Slow jigging near drop-offs still produces.` },
+  'Northern Pike':    { spring: `Pike are shallow and aggressive right after spawn.`, summer: `They retreat to cooler, deeper water in the heat.`, fall: `Pike feed heavily before winter — a great time to target them.`, winter: `Slow presentations near structure work under the cold.` },
+  'Perch':            { spring: `Perch school shallow to spawn.`, summer: `They move a bit deeper once it warms up.`, fall: `Great time to target schooling Perch.`, winter: `Perch stay active even in cold water — a solid winter pick.` },
+  'Striped Bass':     { spring: `Stripers push upriver chasing baitfish during spawn runs.`, summer: `Look for them early/late chasing surface baitfish.`, fall: `Aggressive feeding as baitfish move — great topwater season.`, winter: `Stripers go deep; slow presentations near structure.` },
+};
+
+function getSeasonalClause(species, date) {
+  const month = (date || new Date()).getMonth(); // 0=Jan..11=Dec
+  const season = (month <= 1 || month === 11) ? 'winter'
+    : month <= 4 ? 'spring'
+    : month <= 7 ? 'summer'
+    : 'fall';
+  const bucket = SEASONAL_TIPS[species];
+  return bucket ? (bucket[season] || '') : '';
+}
+
+// ---------------------------------------------------------------------------
 // Pro Tip
 // ---------------------------------------------------------------------------
 function getProTip(loc) {
@@ -418,9 +448,11 @@ function getProTip(loc) {
     'Perch':           `School perch together — once you catch one, drop back to the same spot. They travel in groups.`,
     'Striped Bass':    `Look for birds working the water surface — they follow the same baitfish Stripers are chasing below.`,
   };
-  return tips[species] || (isDock
+  const base = tips[species] || (isDock
     ? `The dock pilings are usually stacked with panfish around 10am. Perfect while you set up lunch!`
     : `The shady bank edges hold the most fish in the morning. Work slowly and let the bait settle.`);
+  const seasonal = getSeasonalClause(species);
+  return seasonal ? `${base} ${seasonal}` : base;
 }
 
 // ---------------------------------------------------------------------------
@@ -479,6 +511,24 @@ function catchReleaseBadge(loc, extraClass) {
   if (!loc || loc.legalStatus !== 'catch_and_release') return '';
   return `<div class="${extraClass || ''} bg-amber-100 border border-amber-300 text-amber-800 font-black text-[11px] px-2.5 py-1 rounded-lg inline-flex items-center gap-1 w-fit">
     ♻️ Catch &amp; Release Only
+  </div>`;
+}
+
+// Hand-curated closure/advisory override (data/spot-notices.json, merged at
+// build time by tools/build_spots_data.py) — same "own banner, not folded
+// into quick-glance tags" treatment as catchReleaseBadge, since a closure
+// changes trip planning more than an amenity tag does.
+function statusNoticeBanner(loc, extraClass) {
+  if (!loc || !loc.statusNotice || !loc.statusNotice.message) return '';
+  const isClosure = loc.statusNotice.severity === 'closure';
+  const colors = isClosure
+    ? 'bg-red-100 border-red-300 text-red-800'
+    : 'bg-amber-100 border-amber-300 text-amber-800';
+  const icon  = isClosure ? '🚧' : '⚠️';
+  const label = isClosure ? 'Closed / Restricted' : 'Advisory';
+  const title = String(loc.statusNotice.message).replace(/"/g, '&quot;');
+  return `<div class="${extraClass || ''} ${colors} border font-black text-[11px] px-2.5 py-1 rounded-lg inline-flex items-center gap-1 w-fit" title="${title}">
+    ${icon} ${label}
   </div>`;
 }
 
@@ -570,6 +620,7 @@ function renderCards(results) {
             ${scoreBadge(loc.score)}
           </div>
           ${catchReleaseBadge(loc, 'mb-1.5')}
+          ${statusNoticeBanner(loc, 'mb-1.5')}
           <div class="flex gap-2 items-center text-[11px] text-gray-500 font-medium">
             <span>📍 ${loc.distMiles} mi</span><span>•</span>
             <span>🚗 ~${Math.round(loc.estDriveHours * 60)} min</span>
@@ -641,6 +692,7 @@ function renderDetailContent(loc) {
           ${loc.source === 'osm-live' ? tagPill('Live Data', 'bg-white/20 text-white') : ''}
         </div>
         ${catchReleaseBadge(loc)}
+        ${statusNoticeBanner(loc, 'mt-1.5')}
       </div>
 
       <div class="flex border-b bg-gray-50">
@@ -695,6 +747,11 @@ function renderDetailContent(loc) {
             <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Legal Status</span><span class="font-black text-gray-700">${legalStatusLabel(loc.legalStatus)}</span></div>
             <div class="flex justify-between text-xs"><span class="text-gray-500 font-bold uppercase">Hours</span><span class="font-black text-gray-700">${formatHours(loc.hours)}</span></div>
           </div>
+          ${loc.statusNotice && loc.statusNotice.message ? `
+          <div class="mb-6 p-3 rounded-xl border ${loc.statusNotice.severity === 'closure' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-800'}">
+            <div class="text-[10px] uppercase font-black mb-1">${loc.statusNotice.severity === 'closure' ? '🚧 Closed / Restricted' : '⚠️ Advisory'}</div>
+            <div class="text-xs font-medium">${loc.statusNotice.message}</div>
+          </div>` : ''}
 
           <h4 class="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Amenities Nearby</h4>
           <div class="grid grid-cols-2 gap-4">
@@ -766,6 +823,23 @@ async function fetchINatSightings(lat, lng) {
   }
 }
 
+// "What's Biting Lately" — species chips derived from the sightings already
+// fetched for the Community Fish Sightings panel above. No new network call:
+// same iNat response, just aggregated by species instead of listed as links.
+function whatsBitingChips(sightings) {
+  const species = [];
+  for (const o of sightings) {
+    const name = (o.taxon && (o.taxon.preferred_common_name || o.taxon.name)) || null;
+    if (name && !species.includes(name)) species.push(name);
+  }
+  if (!species.length) return '';
+  const chips = species.map(s => `<span class="text-[10px] px-2 py-0.5 rounded-full bg-teal-600 text-white font-bold">${s}</span>`).join('');
+  return `<div class="mb-2 pb-2 border-b border-teal-200">
+    <div class="text-[10px] uppercase font-black text-teal-600 mb-1.5">🐟 What's Biting Lately</div>
+    <div class="flex flex-wrap gap-1.5">${chips}</div>
+  </div>`;
+}
+
 async function loadAndRenderINatPanel(loc) {
   const panel = document.getElementById(`inat-panel-${loc.id}`);
   if (!panel) return;
@@ -782,7 +856,7 @@ async function loadAndRenderINatPanel(loc) {
       render('<div class="text-xs text-teal-600 italic">No recent fish sightings reported nearby.</div>');
       return;
     }
-    render(sightings.map(o => {
+    render(whatsBitingChips(sightings) + sightings.map(o => {
       const name  = (o.taxon && (o.taxon.preferred_common_name || o.taxon.name)) || 'Unknown fish';
       const when  = o.observed_on_string || o.observed_on || '';
       const who   = (o.user && (o.user.name || o.user.login)) || '';

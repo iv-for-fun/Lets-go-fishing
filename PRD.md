@@ -1,7 +1,14 @@
 # Product Requirements Document (PRD)
 ## Lets-Go-Fishing — Kid-Friendly Fishing Spot Finder
-**Version:** 1.10 | **Updated:** July 14, 2026 | **Owner:** iv-for-fun
+**Version:** 1.11 | **Updated:** July 31, 2026 | **Owner:** iv-for-fun
 
+> **v1.11 Change Log:** Keyless MVP of the Spot Intelligence Layer (issue #32) shipped — three of its five proposed sub-features, scoped to what the app's no-API-key/no-backend architecture (§11) can actually support:
+> 1. **Closure/advisory notice banner** — a hand-edited manual override, `data/spot-notices.json` (flat dict keyed by final spot id, `{message, severity: "closure"|"advisory"}`), merged into `data/spots/{ABBR}.json` at build time by `tools/build_spots_data.py`'s new `apply_status_notice()` (mirrors the existing curated-DNR merge). Renders as a 🚧/⚠️ pill everywhere the ♻️ Catch & Release badge already renders — card list, detail header, map popup, Saved Spots (§4.2, §4.4, §4.5) — plus the full notice text on the Amenities tab (§4.3). New `statusNotice` field in the data model (§8); live-Overpass fallback spots always carry `statusNotice: null` since their ids don't match the build-time override's id scheme.
+> 2. **🐟 What's Biting Lately** — a species chip row on the Overview tab's Community Fish Sightings panel (§4.3, §4.6), derived from the *same* iNaturalist fetch that panel already makes (no new network call) — just aggregated by unique species instead of listed as individual sighting links.
+> 3. **Seasonal fish-behavior tip** — `getSeasonalClause()` in `app.js`, a pure client-side per-species/per-season lookup folded directly into `getProTip()`'s return value, so both the static Parent Pro-Tip render and the Forecast tab's `getForecastProTip()` (which calls `getProTip()` internally) pick it up with no separate wiring (§4.3).
+>
+> **Declined for this pass, explicitly:** safety alerts mined from review text and a fishing-pressure/popularity badge — both of issue #32's proposed data sources for these (Google Places reviews, Fishbrain, Google Popular Times) require an API key and a backend proxy, which this app has deliberately not had since v1.8. Tracked as the open remainder of issue #32; would need an owner decision to fund/introduce a backend before they're buildable. See §14 backlog.
+>
 > **v1.10 Change Log:** Phase 3 of the pre-built data re-architecture (epic #39, issue #37) shipped: card/detail UI now surfaces the rich merged spot record instead of collapsing it into the old placeholder shape. New: amber **♻️ Catch & Release Only** badge (card + detail) for `legalStatus === 'catch_and_release'`; hours line ("Sunrise–Sunset" / raw / "Hours not listed" — never implies 24/7); legal status line; the Amenities tab now renders the real proximity-joined set (Restrooms, Changing Table, Drinking Water, Playground, Parking, Shelter) with `false` styled as "Not listed" rather than a confirmed absence; "Nearest Bait & Tackle" from `nearbyBait`; Access Type carries a verified (DNR-matched) vs. assumed (OSM default) advisory note, wheelchair/ADA flag. Also closes issue #34: the `childAge < 6 && accessibility === 'Obstructed Bank'` hard filter is removed from `app.js` — accessibility is advisory only, never exclusionary (it excluded nothing in practice, since the build pipeline never assigns `'Obstructed Bank'`, but the exclusionary code path is now gone). `spots-loader.js`'s `normalizeSpotRecord()` and the live-Overpass fallback's `normalizeOverpassResults()` (`app.js`) both now emit the full field set (`legalStatus`, `hours`, `fee`, `operator`, `website`, `wheelchairAccessible`, `nearbyBait`, `nearbyFood`) instead of the old `fees`/`picnicTables`/`shadedArea` placeholders. Kid-Factor scoring's "shaded area" bonus (§5) now reads the real `amenities.shelter` field instead of the never-populated `shadedArea`. Data Model (§8) corrected to match the actual runtime shape. The Catch & Release badge also now appears everywhere a spot can be surfaced, not just the card list and detail view: **Map view popups** (§4.4) and the **Saved Spots** list (§4.5). The DNR Info panel (§4.3, `renderDNRPanel()`) adopts the same unknown ≠ absent treatment for its own unset amenity flags. Also fixed pre-existing card/quick-glance-tag drift from before Phase 3: `getQuickGlanceTags()` was missing the documented 🛥️ Dock Access and 🛝 Playground pills, and incorrectly fired 🎣 Easy Casting for Dock spots too (§4.2.1 has always specified Clear Bank only for Easy Casting, Dock only for Dock Access). See §4.1–§4.5, §5, §8, §14 row 18.
 
 > **v1.9 Change Log:** Kid Comfort's temperature scoring (§6.2) now uses Open-Meteo's `apparent_temperature` ("feels like" — folds in humidity, wind, and solar radiation) instead of the plain air temp, so a hot-humid hour can trip the heat-fail threshold before the raw reading would. The displayed hourly temp is unchanged (still plain `temperature_2m`). Falls back to `temperature_2m` if `apparent_temperature` is ever absent from a response.
@@ -88,6 +95,7 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
   - Location name, distance (miles), and estimated drive time.
   - **Success Score** (0–100) as a color-coded badge (🟢 70+, 🟡 40–69, 🔴 <40).
   - **♻️ Catch & Release Only** badge (amber, prominent) when `legalStatus === 'catch_and_release'` — reinforced in the detail view header (issue #37).
+  - **🚧/⚠️ Closure/Advisory notice** (red for `severity: "closure"`, amber for `"advisory"`) when `loc.statusNotice` is present — a hand-curated override merged at build time (issue #32, §8, §12), same "own badge, not folded into quick-glance tags" treatment as the Catch & Release badge; hover/long-press for the full message.
   - Species tags (up to 2 shown + overflow count).
   - **Quick-glance tags** (see §4.2.1).
   - "Live" badge only when a spot came from the live-Overpass fallback path this search (`source === 'osm-live'`) — pre-built OSM/DNR spots (the normal case) don't carry it, since they're refreshed monthly, not fetched live.
@@ -107,20 +115,20 @@ A mobile-first, single-page web application hosted on GitHub Pages that helps pa
 
 | Tab | Content |
 |---|---|
-| **Overview** | Weather widgets (Temp, Wind, Moon), 🌿 Community Fish Sightings (iNat panel), top species chips, Google Maps directions link |
+| **Overview** | Weather widgets (Temp, Wind, Moon), 🌿 Community Fish Sightings (iNat panel) with a **🐟 What's Biting Lately** species chip row (issue #32, §4.6) derived from the same fetch — no extra network call, top species chips, Google Maps directions link |
 | **Fish & Gear** | Beginner Setup (Ages 3–7) + Junior Pro (Ages 8+) gear guides matched to target species; pro tip |
-| **Amenities** | Legal status (public / catch-and-release / not listed) &amp; hours; real proximity-joined amenities — Restrooms, Changing Table, Drinking Water, Playground, Parking, Shelter (unknown ≠ absent — "Not listed" styling, never a false negative); Nearest Bait & Tackle (with distance); Fee; Access Type + wheelchair/ADA flag + verified-vs-assumed advisory note; DNR Info panel (when available) |
+| **Amenities** | Legal status (public / catch-and-release / not listed) &amp; hours; a **🚧/⚠️ closure/advisory notice** block (full message text) when `loc.statusNotice` is present (issue #32); real proximity-joined amenities — Restrooms, Changing Table, Drinking Water, Playground, Parking, Shelter (unknown ≠ absent — "Not listed" styling, never a false negative); Nearest Bait & Tackle (with distance); Fee; Access Type + wheelchair/ADA flag + verified-vs-assumed advisory note; DNR Info panel (when available) |
 | **Forecast** | Reactive 7-day engine — day strip, hourly timeline, Best Window halo, dual gauges; see §6 |
 
-**Parent Pro-Tip** panel appears below the tab content on every location — sourced from `getProTip(loc)`, which varies by primary species and dock vs. bank access type.
+**Parent Pro-Tip** panel appears below the tab content on every location — sourced from `getProTip(loc)`, which varies by primary species and dock vs. bank access type, and (v1.11) appends a short seasonal fish-behavior clause from `getSeasonalClause()` keyed by the same species and the current month (issue #32) — a pure client-side lookup, no external data.
 
 ### 4.4 Map View
 - Leaflet.js map with color-coded circle markers (green / yellow / red by score).
-- Tap a marker to see a popup with score, distance, drive time, and a "View Details" button — plus the **♻️ Catch & Release Only** badge when applicable, so it's visible before a parent ever opens the detail view.
+- Tap a marker to see a popup with score, distance, drive time, and a "View Details" button — plus the **♻️ Catch & Release Only** badge and the **🚧/⚠️ closure/advisory notice** (issue #32) when applicable, so both are visible before a parent ever opens the detail view.
 
 ### 4.5 Saved Spots
 - Bookmark icon on any card saves the location to `localStorage`.
-- Dedicated **Saved** tab in bottom nav lists all bookmarked spots (also showing the ♻️ Catch & Release badge) — tap to open detail view.
+- Dedicated **Saved** tab in bottom nav lists all bookmarked spots (also showing the ♻️ Catch & Release badge and the 🚧/⚠️ closure/advisory notice, issue #32) — tap to open detail view.
 
 ### 4.6 AI Research Agent (Spot Enrichment) 🔲 Backlog — NOT shipped (reverted)
 
@@ -149,6 +157,7 @@ When a user opens a spot's detail view, live enrichment (today: iNaturalist sigh
 - Returns up to 5 recent verified sightings with taxon name, observer, date, and photo.
 - Results render as a **"🌿 Community Fish Sightings"** panel at the top of the Overview tab.
 - Free and no API key required. Results cached in-memory per session.
+- **🐟 What's Biting Lately** (v1.11, issue #32): the same fetched sightings are also aggregated by unique species (`whatsBitingChips()`, `app.js`) into a chip row prepended above the sighting list — no second network call, just a different view of the data this panel already has.
 
 #### LLM Summarization *(optional)*
 - Triggered only when `CONFIG.OPENAI_API_KEY` or `CONFIG.GEMINI_API_KEY` is present.
@@ -279,11 +288,13 @@ Weather API responses are stored in `localStorage` keyed by location + date; eve
   "estDriveHours": 0.72,
   "score": 78,
   "source": "osm",
-  "dnr": null
+  "dnr": null,
+  "statusNotice": null
 }
 ```
 
 - `legalStatus` — `"public"` (`fishing=yes|permissive` on the OSM element) · `"catch_and_release"` (`fishing=catch_and_release`, surfaced as the amber **♻️ Catch & Release Only** badge on the card and reinforced in the detail view) · `null` when unspecified, rendered as "Legal status not listed" — **never assumed public**.
+- `statusNotice` — (v1.11, issue #32) `{ "message": string, "severity": "closure" | "advisory" }` or `null`. A hand-curated manual override from `data/spot-notices.json`, keyed by spot `id` and merged in at build time by `tools/build_spots_data.py`'s `apply_status_notice()` — not derived from any live source. Renders as a 🚧 (closure, red) or ⚠️ (advisory, amber) badge everywhere the Catch & Release badge appears, plus the full message on the Amenities tab. Always `null` for live-Overpass-fallback spots (`source === "osm-live"`), since that path's generated ids don't match the build-time override's id scheme.
 - `hours` — raw `opening_hours` tag, or `null`. Rendered as "Sunrise–Sunset" for the literal `sunrise-sunset` value, the raw string otherwise, or "Hours not listed" when absent. Never implies 24/7.
 - `accessibility` — `"Dock"` or `"Clear Bank"`; **advisory only, never used to filter results** (issue #34) — no spot is excluded from the card list on this basis, for any child age. Distinguished in the Amenities tab as "✓ Verified via state DNR records" when `dnr` is present, or "Inferred from map data — not verified" otherwise (unknown ≠ known-clear).
 - `amenities` — real proximity-joined values (on-site, ~300–500m at build time — see §6/§7 of `docs/MIGRATION_PLAN.md`); `false` renders as "Not listed" (neutral), never a confirmed absence.
@@ -371,9 +382,10 @@ lets-go-fishing/
 │   ├── dnr/
 │   │   ├── index.json          ← Manifest: which states have DNR data files (regenerated)
 │   │   └── {ABBR}.json         ← Per-state DNR public-access records (GA curated; others generated); build-time input only
+│   ├── spot-notices.json       ← Hand-edited closure/advisory override, keyed by spot id; merged in at build time (issue #32, §8)
 │   └── spots/                  ← Merged OSM+DNR spot data (see docs/MIGRATION_PLAN.md); this is what the app actually loads (issue #36)
 │       ├── index.json          ← Manifest: which states have a built spots file
-│       └── {ABBR}.json         ← Per-state merged fishing spots (OSM + DNR + amenity/bait proximity)
+│       └── {ABBR}.json         ← Per-state merged fishing spots (OSM + DNR + amenity/bait proximity + statusNotice)
 ├── tools/
 │   ├── build_dnr_data.py       ← Generates data/dnr/{ABBR}.json for all states from OpenStreetMap
 │   ├── build_spots_data.py     ← Generates data/spots/{ABBR}.json (SE region by default) — issue #35
@@ -428,3 +440,4 @@ lets-go-fishing/
 | 17 | Multi-state DNR expansion | 🔲 Backlog | Start with GA, expand to SC/TN/AL/FL |
 | 18 | Pre-built, perimeter-scoped spot data (epic #39) | 🟡 Partial | **Phase 1 shipped (issue #35):** `tools/build_spots_data.py` + `generate-spots-data.yml` build merged `data/spots/{ABBR}.json` (SE region) from OSM + DNR. **Phase 2 shipped (issue #36):** `spots-loader.js` loads those files per drive-time perimeter, IndexedDB-cached; live Overpass demoted to fallback-only; live in-browser DNR merge removed. **Phase 3 shipped (issue #37, v1.10):** card/detail UI now surfaces the real merged data — catch-&-release badge, hours, legal status, real proximity amenities, nearest bait & tackle, accessibility advisory (verified-vs-assumed, no hard filter — issue #34 closed). Remaining: Phase 4 scale (#38) |
 | 19 | Reactive 7-Day Forecast Engine | ✅ Shipped (v1.8) | Hourly Fish Activity/Kid Comfort scoring + Parent-Trust safety override, Best Window finder, real solunar transit windows (`solunar.js`), fully reactive UI (`forecast.js`). See §6 |
+| 20 | Spot Intelligence Layer (issue #32) | 🟡 Partial (v1.11) | **Keyless MVP shipped:** closure/advisory notice (`data/spot-notices.json`, build-time merge), 🐟 What's Biting Lately (reuses the existing iNat fetch), seasonal fish-behavior tip (`getSeasonalClause()`, folded into `getProTip()`). **Declined, not deferred-by-omission:** safety alerts (needs Google Places/Fishbrain review text) and a fishing-pressure/popularity badge (needs Google Popular Times) — neither has a keyless data source; would require the app's first backend/API key since v1.8. Needs an owner decision before either is buildable. |

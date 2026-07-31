@@ -347,6 +347,25 @@ class DnrMergeTests(unittest.TestCase):
         self.assertIsNone(spot["fee"])
 
 
+class StatusNoticeTests(unittest.TestCase):
+    def test_applies_matching_notice(self):
+        spot = {"id": "ga-lake-allatoona", "statusNotice": None}
+        notices = {"ga-lake-allatoona": {"message": "Ramp closed", "severity": "closure"}}
+        merged = b.apply_status_notice(spot, notices)
+        self.assertEqual(merged["statusNotice"], {"message": "Ramp closed", "severity": "closure"})
+
+    def test_no_match_leaves_spot_unchanged(self):
+        spot = {"id": "osm-ga-node-1", "statusNotice": None}
+        merged = b.apply_status_notice(spot, {"ga-lake-allatoona": {"message": "x", "severity": "closure"}})
+        self.assertIsNone(merged["statusNotice"])
+        self.assertEqual(merged, spot)
+
+    def test_empty_notices_dict_is_noop(self):
+        spot = {"id": "osm-ga-node-1", "statusNotice": None}
+        merged = b.apply_status_notice(spot, {})
+        self.assertIsNone(merged["statusNotice"])
+
+
 class DedupeTests(unittest.TestCase):
     def test_exact_duplicate_removed(self):
         spots = [

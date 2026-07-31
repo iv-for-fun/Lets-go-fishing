@@ -153,7 +153,8 @@ function normalizeSpotRecord(rec) {
       : _fallbackSpecies(rec.coordinates.lat),
     region: rec.region || 'Nearby',
     source: rec.source || 'osm',
-    dnr: rec.dnr || null
+    dnr: rec.dnr || null,
+    statusNotice: rec.statusNotice || null
   };
 }
 

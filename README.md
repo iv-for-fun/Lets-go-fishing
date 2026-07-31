@@ -15,11 +15,11 @@ A mobile-first web app that helps parents find the **best kid-friendly fishing s
   - Catch Probability (weather temp, barometric pressure, lunar phase)
   - Kid-Factor bonus (restrooms, playgrounds, dock access)
   - Accessibility rating (Dock > Clear Bank > Obstructed Bank)
-- 🃏 **Spot Cards** — Quick-glance tags ("High Activity," "Restrooms," "Easy Casting," "Dock Access," "Playground") and an amber **♻️ Catch & Release Only** badge when applicable
+- 🃏 **Spot Cards** — Quick-glance tags ("High Activity," "Restrooms," "Easy Casting," "Dock Access," "Playground"), an amber **♻️ Catch & Release Only** badge, and a 🚧/⚠️ **closure/advisory notice** when a spot has one
 - 📋 **Detail View** per spot including:
-  - Dynamic **Gear Guide** (e.g., "Bobber & Worms" for panfish, "Small Spinners" for trout)
+  - Dynamic **Gear Guide** (e.g., "Bobber & Worms" for panfish, "Small Spinners" for trout) plus a seasonal fish-behavior Parent Pro-Tip
   - **Reactive 7-Day Forecast** — hourly Fish Activity + Kid Comfort scoring with a "Parent-Trust" safety override, a "Best Window" peak-hour finder, and real moon-transit-based solunar windows (🟢/🟡/🔴 per hour and per day)
-  - Legal status, hours, real proximity amenities, nearest bait & tackle, fees, and an accessibility advisory note (verified vs. assumed)
+  - Legal status, hours, real proximity amenities, nearest bait & tackle, fees, an accessibility advisory note (verified vs. assumed), and a **🐟 What's Biting Lately** species chip row alongside Community Fish Sightings
 - ⚡ **6-Hour Local Cache** — API results cached in `localStorage` to reduce redundant calls
 
 ---
@@ -82,6 +82,7 @@ Lets-go-fishing/
 │   ├── locations.json           # Curated spot dataset (not currently used as a runtime fallback)
 │   ├── us-states-borders.geojson # State polygons for perimeter scoping
 │   ├── dnr/{ABBR}.json           # Curated per-state DNR inputs (build-time source)
+│   ├── spot-notices.json         # Hand-edited closure/advisory override, merged in at build time
 │   └── spots/{ABBR}.json         # Pre-built merged OSM+DNR spot data the app actually loads (regenerated monthly)
 │
 ├── tools/

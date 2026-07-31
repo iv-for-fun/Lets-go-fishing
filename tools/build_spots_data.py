@@ -61,6 +61,7 @@ BORDERS  = os.path.join(ROOT, "data", "us-states-borders.geojson")
 DNR_DIR  = os.path.join(ROOT, "data", "dnr")
 SPOTS_DIR = os.path.join(ROOT, "data", "spots")
 MANIFEST  = os.path.join(SPOTS_DIR, "index.json")
+NOTICES_PATH = os.path.join(ROOT, "data", "spot-notices.json")
 
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
@@ -325,6 +326,7 @@ def element_to_spot(el, abbr):
         "region": None,
         "source": "osm",
         "dnr": None,  # every spot carries this key so a consumer never needs a hasattr/`in` check
+        "statusNotice": None,  # filled in by apply_status_notice() from data/spot-notices.json, if matched
     }
 
 
@@ -583,6 +585,20 @@ def merge_dnr_into_spot(spot, d):
     return merged
 
 
+def apply_status_notice(spot, notices):
+    """Pure: stamp a hand-curated closure/advisory notice (data/spot-notices.json,
+    keyed by final spot id) onto a spot record, if one matches. Returns spot
+    unchanged when there's no match — the manual-override analog of the DNR
+    merge above, but for point-in-time notices an owner can hand-edit without
+    waiting on a full OSM/DNR rebuild."""
+    notice = notices.get(spot["id"])
+    if not notice:
+        return spot
+    merged = dict(spot)
+    merged["statusNotice"] = notice
+    return merged
+
+
 _DNR_FEE_UNKNOWN_TEXTS = {"check locally", "unknown", "n/a", "varies", "tbd"}
 
 
@@ -628,6 +644,7 @@ def dnr_to_standalone_spot(d, abbr, state_name):
         "region": f"{d['county']} County, {abbr}" if d.get("county") else state_name,
         "source": "dnr",
         "dnr": d,
+        "statusNotice": None,
     }
 
 
@@ -660,6 +677,19 @@ def load_dnr_records(abbr):
     except Exception:
         return []
     return [r for r in (normalize_dnr_record(rec, abbr) for rec in raw) if r]
+
+
+def load_status_notices():
+    """Hand-edited manual override (data/spot-notices.json) — a flat dict
+    keyed by final spot id, e.g. {"ga-lake-allatoona": {"message": "...",
+    "severity": "closure"}}. Missing/empty file is normal, not an error."""
+    if not os.path.exists(NOTICES_PATH):
+        return {}
+    try:
+        with open(NOTICES_PATH) as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
 
 
 def build_state(abbr, feature):
@@ -717,6 +747,11 @@ def build_state(abbr, feature):
             merged.append(standalone)
 
     merged = dedupe_spots(merged)
+
+    notices = load_status_notices()
+    if notices:
+        merged = [apply_status_notice(s, notices) for s in merged]
+
     print(f"[{abbr}] {len(merged)} merged spots ({len(spots)} OSM, {len(dnr_records)} DNR input records, "
           f"{len(matched_dnr_ids)} matched)", flush=True)
     return state_name, merged
